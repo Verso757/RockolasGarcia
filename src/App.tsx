@@ -64,45 +64,84 @@ export default function App() {
     }
   }, []);
 
-  // Fetch initial state & connect SSE stream
+  // Fetch initial state & connect SSE stream + active sync polling
   useEffect(() => {
-    const fetchInitial = async () => {
+    let isMounted = true;
+
+    const fetchState = async () => {
       try {
         const res = await fetch('/api/state');
-        if (res.ok) {
+        if (res.ok && isMounted) {
           const data = await res.json();
-          setRoomState(data);
+          setRoomState((prev) => {
+            // Only update if something changed to avoid unnecessary re-renders
+            if (
+              prev.currentSong?.videoId === data.currentSong?.videoId &&
+              prev.isPlaying === data.isPlaying &&
+              prev.queue.length === data.queue.length &&
+              prev.theme === data.theme
+            ) {
+              return prev;
+            }
+            return {
+              ...prev,
+              ...data,
+            };
+          });
         }
       } catch (err) {
-        console.warn('Backend /api/state not reachable yet, using initial data:', err);
+        // Backend not reachable yet
       }
     };
-    fetchInitial();
+
+    fetchState();
+
+    // Active polling interval every 2.5s guarantees synchronization across mobile & PC
+    const pollInterval = setInterval(fetchState, 2500);
 
     let eventSource: EventSource | null = null;
-    try {
-      const deviceType = mode === 'guest' ? 'mobile' : 'tv';
-      const deviceName = mode === 'guest' ? 'Celular' : 'Smart TV (Principal)';
-      eventSource = new EventSource(`/api/stream?deviceType=${deviceType}&deviceName=${encodeURIComponent(deviceName)}`);
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          setRoomState((prev) => ({
-            ...prev,
-            ...data,
-          }));
-        } catch (e) {
-          console.error('Error parsing SSE event:', e);
-        }
-      };
-    } catch {
-      // ignore
-    }
+    const connectSSE = () => {
+      try {
+        const deviceType = mode === 'guest' ? 'mobile' : 'tv';
+        const deviceName = mode === 'guest' ? 'Celular' : 'Smart TV (Principal)';
+        eventSource = new EventSource(`/api/stream?deviceType=${deviceType}&deviceName=${encodeURIComponent(deviceName)}`);
+
+        eventSource.onmessage = (event) => {
+          if (!isMounted) return;
+          try {
+            const data = JSON.parse(event.data);
+            setRoomState((prev) => ({
+              ...prev,
+              ...data,
+            }));
+          } catch (e) {
+            console.error('Error parsing SSE event:', e);
+          }
+        };
+
+        eventSource.onerror = () => {
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+          }
+          // Reconnect after 3s
+          setTimeout(() => {
+            if (isMounted) connectSSE();
+          }, 3000);
+        };
+      } catch {
+        // ignore
+      }
+    };
+
+    connectSSE();
 
     return () => {
+      isMounted = false;
+      clearInterval(pollInterval);
       if (eventSource) eventSource.close();
     };
-  }, []);
+  }, [mode]);
 
   // Handle adding a song
   const handleAddSong = useCallback(

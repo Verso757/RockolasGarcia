@@ -98,6 +98,20 @@ function broadcastState(eventType: string = 'state') {
   });
 }
 
+// SSE keepalive heartbeat every 15s to keep Cloud Run / proxy connections open
+setInterval(() => {
+  const aliveClients: SSEClient[] = [];
+  sseClients.forEach((client) => {
+    try {
+      client.res.write(': keepalive\n\n');
+      aliveClients.push(client);
+    } catch {
+      // client closed
+    }
+  });
+  sseClients = aliveClients;
+}, 15000);
+
 // SSE stream
 app.get('/api/stream', (req: Request, res: Response) => {
   res.setHeader('Content-Type', 'text/event-stream');
