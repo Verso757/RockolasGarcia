@@ -1,35 +1,47 @@
 /**
  * Utility to obtain the true, public world-accessible URL for the Rockola
- * so that any external mobile phone scanning the QR code or opening the link
- * can connect without hitting "localhost" or private internal workstation 404s.
+ * Supports custom domain rafael.familiagarcia.site as the primary domain
+ * and falls back gracefully to Cloud Run development/production URLs.
  */
 
-const PUBLIC_FALLBACK_URL = 'https://ais-dev-gabu2356ad3gt7v22gf6ak-325907120404.us-east1.run.app';
+export const CUSTOM_DOMAIN = 'https://rafael.familiagarcia.site';
+export const CLOUD_RUN_DEV_URL = 'https://ais-dev-gabu2356ad3gt7v22gf6ak-325907120404.us-east1.run.app';
 
 export function getPublicRockolaUrl(targetMode: 'tv' | 'guest' = 'guest'): string {
   if (typeof window === 'undefined') {
-    return `${PUBLIC_FALLBACK_URL}/?mode=${targetMode}`;
+    return `${CUSTOM_DOMAIN}/?mode=${targetMode}`;
   }
 
   const hostname = window.location.hostname.toLowerCase();
 
-  // If the browser is running on localhost, 127.0.0.1, or a private internal development cluster
-  // (which other phones on 4G/Wi-Fi cannot access directly):
+  // If user is accessing via the custom domain rafael.familiagarcia.site
+  if (hostname.includes('familiagarcia.site')) {
+    try {
+      const url = new URL(window.location.origin);
+      url.searchParams.set('mode', targetMode);
+      return url.toString();
+    } catch {
+      return `${CUSTOM_DOMAIN}/?mode=${targetMode}`;
+    }
+  }
+
+  // If the browser is running on localhost, 127.0.0.1, or a private internal development cluster:
   if (
     hostname === 'localhost' ||
     hostname === '127.0.0.1' ||
     hostname.includes('cloudworkstations.dev') ||
     hostname.includes('webcontainer')
   ) {
-    return `${PUBLIC_FALLBACK_URL}/?mode=${targetMode}`;
+    // Prefer custom domain if configured, or the live cloud run url
+    return `${CUSTOM_DOMAIN}/?mode=${targetMode}`;
   }
 
-  // Otherwise we are on the public deployment (e.g. .run.app or custom domain)
+  // If already on Cloud Run (.run.app) or another live public domain
   try {
     const url = new URL(window.location.origin);
     url.searchParams.set('mode', targetMode);
     return url.toString();
   } catch {
-    return `${PUBLIC_FALLBACK_URL}/?mode=${targetMode}`;
+    return `${CUSTOM_DOMAIN}/?mode=${targetMode}`;
   }
 }

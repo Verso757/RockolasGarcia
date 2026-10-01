@@ -66,6 +66,18 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
   // Lower-third song banner state (shows for 7 seconds when song changes)
   const [showLowerThird, setShowLowerThird] = useState(true);
 
+  // On-screen HUD for Smart TV remote actions
+  const [remoteHud, setRemoteHud] = useState<{ text: string; icon: string } | null>(null);
+  const hudTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerHud = (text: string, icon: string) => {
+    setRemoteHud({ text, icon });
+    if (hudTimeoutRef.current) clearTimeout(hudTimeoutRef.current);
+    hudTimeoutRef.current = setTimeout(() => {
+      setRemoteHud(null);
+    }, 1800);
+  };
+
   const playerElementId = 'youtube-jukebox-iframe-player';
 
   // Dynamic atmospheric visual effects based on the song's genre/energy
@@ -172,6 +184,137 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
       );
     }
   }, []);
+
+  // Samsung Smart TV / TV Remote Control Event Listener
+  useEffect(() => {
+    // Register Samsung Tizen remote keys if running on Tizen OS
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof window !== 'undefined' && (window as any).tizen) {
+      try {
+        const keys = [
+          'MediaPlay',
+          'MediaPause',
+          'MediaPlayPause',
+          'MediaTrackNext',
+          'MediaTrackPrevious',
+          'VolumeUp',
+          'VolumeDown',
+          'Search',
+        ];
+        keys.forEach((k) => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).tizen.tvinputdevice.registerKey(k);
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      handleUserActivity();
+
+      // Enter, Space, or MediaPlayPause: Toggle Play/Pause
+      if (
+        e.key === ' ' ||
+        e.key === 'Enter' ||
+        e.key === 'MediaPlayPause' ||
+        e.keyCode === 10252 ||
+        e.keyCode === 415 ||
+        e.keyCode === 19
+      ) {
+        e.preventDefault();
+        sounds.playButtonTick();
+        const nextState = !isPlayingRef.current;
+        onPlayPauseToggle(nextState);
+        triggerHud(nextState ? 'REPRODUCIENDO' : 'PAUSA', nextState ? '▶' : '⏸');
+        return;
+      }
+
+      // ArrowRight or MediaTrackNext / FastForward: Next song
+      if (
+        e.key === 'ArrowRight' ||
+        e.key === 'MediaTrackNext' ||
+        e.key === 'MediaFastForward' ||
+        e.keyCode === 176 ||
+        e.keyCode === 417
+      ) {
+        e.preventDefault();
+        sounds.playButtonTick();
+        triggerHud('SIGUIENTE CANCIÓN', '⏭');
+        onNextSong();
+        return;
+      }
+
+      // ArrowLeft or MediaTrackPrevious / Rewind: Rewind 10s
+      if (
+        e.key === 'ArrowLeft' ||
+        e.key === 'MediaTrackPrevious' ||
+        e.key === 'MediaRewind' ||
+        e.keyCode === 177 ||
+        e.keyCode === 412
+      ) {
+        e.preventDefault();
+        sounds.playButtonTick();
+        if (playerRef.current?.getCurrentTime && playerRef.current?.seekTo) {
+          const current = playerRef.current.getCurrentTime();
+          playerRef.current.seekTo(Math.max(0, current - 10), true);
+          triggerHud('REBOBINAR 10s', '⏪');
+        }
+        return;
+      }
+
+      // ArrowUp: Volume +5%
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setVolume((prev) => {
+          const next = Math.min(100, prev + 5);
+          playerRef.current?.setVolume?.(next);
+          triggerHud(`VOLUMEN ${next}%`, '🔊');
+          return next;
+        });
+        return;
+      }
+
+      // ArrowDown: Volume -5%
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setVolume((prev) => {
+          const next = Math.max(0, prev - 5);
+          playerRef.current?.setVolume?.(next);
+          triggerHud(`VOLUMEN ${next}%`, next === 0 ? '🔇' : '🔉');
+          return next;
+        });
+        return;
+      }
+
+      // KeyM: Mute / Unmute
+      if (e.key === 'm' || e.key === 'M' || e.key === 'VolumeMute') {
+        e.preventDefault();
+        handleToggleMute();
+        triggerHud(isMuted ? 'SONIDO ACTIVADO' : 'SILENCIADO', isMuted ? '🔊' : '🔇');
+        return;
+      }
+
+      // KeyF: Fullscreen
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        handleFullscreen();
+        return;
+      }
+
+      // KeyS: Open Search
+      if (e.key === 's' || e.key === 'S' || e.key === 'Search') {
+        e.preventDefault();
+        onOpenSearch();
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onPlayPauseToggle, onNextSong, isMuted, onOpenSearch]);
 
   // Initialize YouTube Iframe
   useEffect(() => {
@@ -567,6 +710,16 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* HUD DE CONTROL REMOTO (SAMSUNG SMART TV OSD) */}
+      {remoteHud && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none flex flex-col items-center justify-center gap-2 rounded-2xl bg-black/90 backdrop-blur-xl border-2 border-cyan-400 px-8 py-5 shadow-[0_0_60px_rgba(6,182,212,0.6)] animate-in fade-in zoom-in-90 duration-150">
+          <span className="text-5xl drop-shadow">{remoteHud.icon}</span>
+          <span className="font-mono text-sm sm:text-base font-black tracking-widest text-cyan-300 uppercase drop-shadow">
+            {remoteHud.text}
+          </span>
+        </div>
+      )}
     </div>
   );
 };

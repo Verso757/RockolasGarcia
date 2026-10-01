@@ -119,7 +119,7 @@ export const VideoTriviaOverlay: React.FC<VideoTriviaOverlayProps> = ({
               category: 'EN ROCKOLAS GARCÍA',
               icon: '👑',
               badge: currentSong.artist || 'Música',
-              text: `Interpretada magistralmente por ${currentSong.artist || 'grandes leyendas'}. Una de las consentidas de Don Rafa García para cantar a coro.`,
+              text: `Interpretada magistralmente por ${currentSong.artist || 'grandes leyendas'}. Una de las consentidas de mi papá Rafael para cantar a coro en familia.`,
             });
 
             if (newFacts.length > 0) {
