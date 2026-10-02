@@ -1,5 +1,6 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import legacy from '@vitejs/plugin-legacy';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { defineConfig } from 'vite';
@@ -12,6 +13,9 @@ export default defineConfig(() => {
   return {
     plugins: [
       react(),
+      legacy({
+        targets: ['chrome >= 60', 'safari >= 11', 'edge >= 18', 'firefox >= 60'],
+      }),
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
@@ -60,6 +64,10 @@ export default defineConfig(() => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
+    },
+    build: {
+      target: ['chrome69', 'es2018'],
+      cssTarget: ['chrome69'],
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
