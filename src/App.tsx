@@ -543,6 +543,7 @@ export default function App() {
             currentSong={roomState.currentSong}
             isPlaying={roomState.isPlaying}
             currentTheme={roomState.theme}
+            currentSongStartedAt={roomState.currentSongStartedAt}
             onPlayPauseToggle={handlePlayPauseToggle}
             onNextSong={handleNextSong}
             onSongEnd={handleNextSong}

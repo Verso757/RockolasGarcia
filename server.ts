@@ -38,6 +38,7 @@ export interface SongItem {
   artist?: string;
   thumbnail: string;
   duration?: string;
+  durationSeconds?: number;
   requestedBy?: string;
   votes: number;
   voters: string[];
@@ -60,9 +61,33 @@ export interface RockolaRoomState {
   history: PlayedSongRecord[];
   autoPlayDj: boolean;
   theme: RockolaTheme;
+  currentSongStartedAt?: number;
 }
 
 const DATA_FILE = path.join(__dirname, 'rockola_server_state.json');
+
+function parseDurationToSeconds(duration?: string | number): number {
+  if (typeof duration === 'number' && !isNaN(duration) && duration > 0) return duration;
+  if (!duration || typeof duration !== 'string') return 210;
+
+  const isoMatch = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (isoMatch) {
+    const hours = parseInt(isoMatch[1] || '0', 10);
+    const minutes = parseInt(isoMatch[2] || '0', 10);
+    const seconds = parseInt(isoMatch[3] || '0', 10);
+    const total = hours * 3600 + minutes * 60 + seconds;
+    return total > 0 ? total : 210;
+  }
+
+  const parts = duration.split(':').map((p) => parseInt(p, 10));
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    return parts[0] * 60 + parts[1];
+  }
+  if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return 210;
+}
 
 function loadServerState(): RockolaRoomState {
   try {
@@ -78,6 +103,7 @@ function loadServerState(): RockolaRoomState {
           history: parsed.history || [],
           autoPlayDj: parsed.autoPlayDj ?? true,
           theme: parsed.theme || 'wurlitzer',
+          currentSongStartedAt: parsed.currentSongStartedAt,
         };
       }
     }
@@ -92,10 +118,43 @@ function loadServerState(): RockolaRoomState {
     history: [],
     autoPlayDj: true,
     theme: 'wurlitzer',
+    currentSongStartedAt: undefined,
   };
 }
 
 let state: RockolaRoomState = loadServerState();
+
+function advanceTimelineIfNeeded() {
+  if (!state.isPlaying || !state.currentSong) return;
+
+  const now = Date.now();
+  if (!state.currentSongStartedAt) {
+    state.currentSongStartedAt = now;
+    return;
+  }
+
+  const durationSec = state.currentSong.durationSeconds || parseDurationToSeconds(state.currentSong.duration);
+  const elapsedSec = (now - state.currentSongStartedAt) / 1000;
+
+  if (elapsedSec >= durationSec) {
+    recordSongInHistory(state.currentSong);
+
+    if (state.queue.length > 0) {
+      const nextSong = state.queue.shift()!;
+      state.currentSong = nextSong;
+      state.currentSongStartedAt = now;
+      state.isPlaying = true;
+      broadcastState('timeline_advanced');
+    } else {
+      state.currentSong = null;
+      state.isPlaying = false;
+      state.currentSongStartedAt = undefined;
+      broadcastState('timeline_ended');
+    }
+  }
+}
+
+setInterval(advanceTimelineIfNeeded, 2500);
 
 function saveServerState() {
   try {
@@ -194,6 +253,7 @@ app.get('/api/devices', (_req: Request, res: Response) => {
 
 // GET current state
 app.get('/api/state', (_req: Request, res: Response) => {
+  advanceTimelineIfNeeded();
   res.json(state);
 });
 
@@ -594,6 +654,7 @@ app.post('/api/queue', (req: Request, res: Response) => {
   if (!state.currentSong) {
     state.currentSong = newSong;
     state.isPlaying = true;
+    state.currentSongStartedAt = Date.now();
     recordSongInHistory(newSong);
   } else if (isPriority) {
     state.queue.unshift(newSong);
@@ -705,9 +766,13 @@ app.post('/api/player/sync', (req: Request, res: Response) => {
 
   if (currentSong !== undefined) {
     state.currentSong = currentSong;
+    state.currentSongStartedAt = Date.now();
   }
   if (typeof isPlaying === 'boolean') {
     state.isPlaying = isPlaying;
+    if (isPlaying && !state.currentSongStartedAt) {
+      state.currentSongStartedAt = Date.now();
+    }
   }
 
   broadcastState('player_sync');
@@ -724,6 +789,7 @@ app.post('/api/player/next', async (_req: Request, res: Response) => {
     const nextSong = state.queue.shift()!;
     state.currentSong = nextSong;
     state.isPlaying = true;
+    state.currentSongStartedAt = Date.now();
   } else if (state.autoPlayDj && state.currentSong) {
     // AUTO-PLAY DJ: The queue was empty, so automatically pick a recommended song
     try {
@@ -743,17 +809,21 @@ app.post('/api/player/next', async (_req: Request, res: Response) => {
           addedAt: Date.now(),
         };
         state.isPlaying = true;
+        state.currentSongStartedAt = Date.now();
       } else {
         state.currentSong = null;
         state.isPlaying = false;
+        state.currentSongStartedAt = undefined;
       }
     } catch {
       state.currentSong = null;
       state.isPlaying = false;
+      state.currentSongStartedAt = undefined;
     }
   } else {
     state.currentSong = null;
     state.isPlaying = false;
+    state.currentSongStartedAt = undefined;
   }
 
   broadcastState('song_changed');

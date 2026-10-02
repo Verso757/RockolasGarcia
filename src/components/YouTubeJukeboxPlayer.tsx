@@ -21,6 +21,7 @@ interface YouTubeJukeboxPlayerProps {
   currentSong: SongItem | null;
   isPlaying: boolean;
   currentTheme?: RockolaTheme;
+  currentSongStartedAt?: number;
   onPlayPauseToggle: (playing: boolean) => void;
   onNextSong: () => void;
   onSongEnd: () => void;
@@ -40,6 +41,7 @@ declare global {
 export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
   currentSong,
   isPlaying,
+  currentSongStartedAt,
   onPlayPauseToggle,
   onNextSong,
   onSongEnd,
@@ -49,6 +51,7 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
   const qrCanvasRef = useRef<HTMLCanvasElement>(null);
+  const silentAudioRef = useRef<HTMLAudioElement | null>(null);
   const isPlayingRef = useRef(isPlaying);
   isPlayingRef.current = isPlaying;
 
@@ -359,7 +362,11 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
                 setNeedUserGesture(false);
                 if (!isPlayingRef.current) onPlayPauseToggle(true);
               } else if (event.data === window.YT.PlayerState.PAUSED) {
-                if (isPlayingRef.current) onPlayPauseToggle(false);
+                // If document is hidden, the browser paused the tab due to backgrounding/screen lock.
+                // Do NOT broadcast a room-wide pause so playback continues in the room/timeline!
+                if (isPlayingRef.current && !document.hidden) {
+                  onPlayPauseToggle(false);
+                }
               }
             },
             onError: (err: any) => {
@@ -396,9 +403,10 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
 
     if (currentSong?.videoId) {
       try {
+        const elapsedSec = currentSongStartedAt ? Math.max(0, (Date.now() - currentSongStartedAt) / 1000) : 0;
         playerRef.current.loadVideoById({
           videoId: currentSong.videoId,
-          startSeconds: 0,
+          startSeconds: elapsedSec > 2 ? Math.floor(elapsedSec) : 0,
         });
         if (isPlaying) {
           playerRef.current.playVideo();
@@ -414,6 +422,130 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
       }
     }
   }, [currentSong?.videoId, isReady]);
+
+  // Handle returning from background / tab switch / screen unlock
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && isPlayingRef.current && playerRef.current) {
+        try {
+          const ytState = playerRef.current.getPlayerState?.();
+          if (ytState !== window.YT.PlayerState.PLAYING) {
+            playerRef.current.playVideo();
+          }
+          if (currentSongStartedAt) {
+            const currentExpected = Math.max(0, (Date.now() - currentSongStartedAt) / 1000);
+            const actual = playerRef.current.getCurrentTime?.() || 0;
+            if (Math.abs(actual - currentExpected) > 4) {
+              playerRef.current.seekTo(currentExpected, true);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [currentSongStartedAt]);
+
+  // Background silent audio anchor to keep OS media session alive when minimized / locked
+  useEffect(() => {
+    if (!silentAudioRef.current) return;
+    if (isPlaying && currentSong) {
+      silentAudioRef.current.play().catch(() => {});
+    } else {
+      silentAudioRef.current.pause();
+    }
+  }, [isPlaying, currentSong]);
+
+  // Comprehensive MediaSession API for lock-screen controls, notification center & Dynamic Island
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+
+    if (!currentSong) {
+      navigator.mediaSession.playbackState = 'none';
+      return;
+    }
+
+    try {
+      const thumb = currentSong.thumbnail || `https://img.youtube.com/vi/${currentSong.videoId}/hqdefault.jpg`;
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: currentSong.title,
+        artist: currentSong.artist || 'Rockola Rafael García',
+        album: 'Rockola Rafael García',
+        artwork: [
+          { src: thumb, sizes: '96x96', type: 'image/jpeg' },
+          { src: thumb, sizes: '128x128', type: 'image/jpeg' },
+          { src: thumb, sizes: '192x192', type: 'image/jpeg' },
+          { src: thumb, sizes: '256x256', type: 'image/jpeg' },
+          { src: thumb, sizes: '384x384', type: 'image/jpeg' },
+          { src: thumb, sizes: '512x512', type: 'image/jpeg' },
+        ],
+      });
+
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+
+      // 1. Play
+      navigator.mediaSession.setActionHandler('play', () => {
+        onPlayPauseToggle(true);
+      });
+
+      // 2. Pause
+      navigator.mediaSession.setActionHandler('pause', () => {
+        onPlayPauseToggle(false);
+      });
+
+      // 3. Next song
+      navigator.mediaSession.setActionHandler('nexttrack', () => {
+        onNextSong();
+      });
+
+      // 4. Previous / Rewind 10s
+      navigator.mediaSession.setActionHandler('previoustrack', () => {
+        if (playerRef.current?.seekTo && playerRef.current?.getCurrentTime) {
+          const cur = playerRef.current.getCurrentTime();
+          if (cur > 5) {
+            playerRef.current.seekTo(0, true);
+          } else {
+            playerRef.current.seekTo(Math.max(0, cur - 10), true);
+          }
+        }
+      });
+
+      // 5. Seek To (Scrubber on lock screen)
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (details.seekTime !== undefined && playerRef.current?.seekTo) {
+          playerRef.current.seekTo(details.seekTime, true);
+          setCurrentTime(details.seekTime);
+        }
+      });
+
+      // 6. Seek Forward 10s
+      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+        const offset = details.seekOffset || 10;
+        if (playerRef.current?.seekTo && playerRef.current?.getCurrentTime) {
+          const cur = playerRef.current.getCurrentTime();
+          playerRef.current.seekTo(cur + offset, true);
+        }
+      });
+
+      // 7. Seek Backward 10s
+      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+        const offset = details.seekOffset || 10;
+        if (playerRef.current?.seekTo && playerRef.current?.getCurrentTime) {
+          const cur = playerRef.current.getCurrentTime();
+          playerRef.current.seekTo(Math.max(0, cur - offset), true);
+        }
+      });
+
+      // 8. Stop
+      navigator.mediaSession.setActionHandler('stop', () => {
+        onPlayPauseToggle(false);
+      });
+    } catch (e) {
+      console.warn('Error setting MediaSession:', e);
+    }
+  }, [currentSong, isPlaying, onPlayPauseToggle, onNextSong]);
 
   // Sync play/pause
   useEffect(() => {
@@ -436,17 +568,34 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
     }
   }, [isPlaying, isReady]);
 
-  // Poll progress
+  // Poll progress and update lock screen position state
   useEffect(() => {
     if (!isReady || !playerRef.current) return;
 
     const interval = setInterval(() => {
       try {
+        let cur = 0;
+        let dur = 0;
         if (playerRef.current.getCurrentTime) {
-          setCurrentTime(playerRef.current.getCurrentTime());
+          cur = playerRef.current.getCurrentTime();
+          setCurrentTime(cur);
         }
         if (playerRef.current.getDuration) {
-          setDuration(playerRef.current.getDuration());
+          dur = playerRef.current.getDuration();
+          setDuration(dur);
+        }
+
+        // Keep system lock-screen progress bar in sync
+        if ('mediaSession' in navigator && 'setPositionState' in navigator.mediaSession && dur > 0) {
+          try {
+            navigator.mediaSession.setPositionState({
+              duration: Math.max(0, dur),
+              playbackRate: 1,
+              position: Math.min(Math.max(0, cur), dur),
+            });
+          } catch {
+            // ignore
+          }
         }
       } catch {
         // ignore
@@ -508,6 +657,15 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
       onClick={handleUserActivity}
       className="relative w-screen h-screen bg-black overflow-hidden flex items-center justify-center select-none"
     >
+      {/* Background audio anchor to keep OS media session alive when minimized / locked */}
+      <audio
+        ref={silentAudioRef}
+        loop
+        playsInline
+        src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"
+        className="hidden"
+      />
+
       {/* HALO DE NEÓN REACTIVO AL GÉNERO DE LA CANCIÓN */}
       <div
         className="absolute inset-0 pointer-events-none transition-all duration-1000 z-10"

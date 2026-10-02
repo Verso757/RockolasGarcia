@@ -7,6 +7,7 @@ export interface SongItem {
   artist?: string;
   thumbnail: string;
   duration?: string;
+  durationSeconds?: number;
   requestedBy?: string;
   votes: number;
   voters: string[];
@@ -27,4 +28,5 @@ export interface RockolaRoomState {
   history: PlayedSongRecord[];
   autoPlayDj: boolean;
   theme: RockolaTheme;
+  currentSongStartedAt?: number;
 }

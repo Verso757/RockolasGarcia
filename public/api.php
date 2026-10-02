@@ -26,8 +26,79 @@ function getInitialState() {
         'history' => [],
         'autoPlayDj' => true,
         'theme' => 'wurlitzer',
+        'currentSongStartedAt' => null,
         'updatedAt' => time() * 1000
     ];
+}
+
+function parseDurationToSeconds($duration) {
+    if (is_numeric($duration) && $duration > 0) return (int)$duration;
+    if (empty($duration) || !is_string($duration)) return 210;
+    
+    $parts = explode(':', $duration);
+    if (count($parts) === 2) {
+        return ((int)$parts[0] * 60) + (int)$parts[1];
+    }
+    if (count($parts) === 3) {
+        return ((int)$parts[0] * 3600) + ((int)$parts[1] * 60) + (int)$parts[2];
+    }
+    return 210;
+}
+
+function advanceTimeline(&$state, $dataFile) {
+    if (empty($state['isPlaying']) || empty($state['currentSong'])) {
+        return;
+    }
+    if (empty($state['currentSongStartedAt'])) {
+        $state['currentSongStartedAt'] = round(microtime(true) * 1000);
+        saveState($dataFile, $state);
+        return;
+    }
+
+    $now = round(microtime(true) * 1000);
+    $startedAt = $state['currentSongStartedAt'];
+    $durationSec = !empty($state['currentSong']['durationSeconds']) 
+        ? $state['currentSong']['durationSeconds'] 
+        : parseDurationToSeconds($state['currentSong']['duration'] ?? '');
+    
+    $elapsedSec = ($now - $startedAt) / 1000;
+    
+    $changed = false;
+    while ($elapsedSec >= $durationSec && !empty($state['currentSong'])) {
+        $played = $state['currentSong'];
+        $played['playedAt'] = $now;
+        $played['playCount'] = 1;
+        if (!isset($state['history']) || !is_array($state['history'])) {
+            $state['history'] = [];
+        }
+        array_unshift($state['history'], $played);
+        if (count($state['history']) > 25) {
+            array_pop($state['history']);
+        }
+
+        if (!empty($state['queue'])) {
+            $next = array_shift($state['queue']);
+            $state['currentSong'] = $next;
+            $startedAt += ($durationSec * 1000);
+            $state['currentSongStartedAt'] = $startedAt;
+            $state['isPlaying'] = true;
+            $durationSec = !empty($next['durationSeconds']) 
+                ? $next['durationSeconds'] 
+                : parseDurationToSeconds($next['duration'] ?? '');
+            $elapsedSec = ($now - $startedAt) / 1000;
+            $changed = true;
+        } else {
+            $state['currentSong'] = null;
+            $state['isPlaying'] = false;
+            $state['currentSongStartedAt'] = null;
+            $changed = true;
+            break;
+        }
+    }
+
+    if ($changed) {
+        saveState($dataFile, $state);
+    }
 }
 
 function loadState($file) {
@@ -41,7 +112,9 @@ function loadState($file) {
         return getInitialState();
     }
     $json = @json_decode($raw, true);
-    return is_array($json) ? $json : getInitialState();
+    $state = is_array($json) ? $json : getInitialState();
+    advanceTimeline($state, $file);
+    return $state;
 }
 
 function saveState($file, $state) {
@@ -88,6 +161,7 @@ if ((strpos($requestUri, '/queue') !== false || isset($_GET['action']) && $_GET[
     if (empty($state['currentSong'])) {
         $state['currentSong'] = $newSong;
         $state['isPlaying'] = true;
+        $state['currentSongStartedAt'] = round(microtime(true) * 1000);
     } elseif ($isPriority) {
         array_unshift($state['queue'], $newSong);
     } else {
