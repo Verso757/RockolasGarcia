@@ -62,16 +62,48 @@ export interface RockolaRoomState {
   theme: RockolaTheme;
 }
 
-// Initial state starts blank as requested
-const state: RockolaRoomState = {
-  name: 'Rockola Rafael García',
-  currentSong: null,
-  isPlaying: false,
-  queue: [],
-  history: [],
-  autoPlayDj: true,
-  theme: 'wurlitzer',
-};
+const DATA_FILE = path.join(__dirname, 'rockola_server_state.json');
+
+function loadServerState(): RockolaRoomState {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const content = fs.readFileSync(DATA_FILE, 'utf-8');
+      const parsed = JSON.parse(content);
+      if (parsed && Array.isArray(parsed.queue)) {
+        return {
+          name: parsed.name || 'Rockola Rafael García',
+          currentSong: parsed.currentSong || null,
+          isPlaying: parsed.isPlaying ?? false,
+          queue: parsed.queue || [],
+          history: parsed.history || [],
+          autoPlayDj: parsed.autoPlayDj ?? true,
+          theme: parsed.theme || 'wurlitzer',
+        };
+      }
+    }
+  } catch (e) {
+    console.error('Error loading persistent server state:', e);
+  }
+  return {
+    name: 'Rockola Rafael García',
+    currentSong: null,
+    isPlaying: false,
+    queue: [],
+    history: [],
+    autoPlayDj: true,
+    theme: 'wurlitzer',
+  };
+}
+
+let state: RockolaRoomState = loadServerState();
+
+function saveServerState() {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(state, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Error saving persistent server state:', e);
+  }
+}
 
 // SSE Listeners
 interface SSEClient {
@@ -84,6 +116,7 @@ interface SSEClient {
 let sseClients: SSEClient[] = [];
 
 function broadcastState(eventType: string = 'state') {
+  saveServerState();
   const data = JSON.stringify({
     ...state,
     _eventType: eventType,

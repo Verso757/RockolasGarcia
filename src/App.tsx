@@ -17,6 +17,7 @@ import { useTvRemote } from './hooks/useTvRemote';
 import { sounds } from './utils/audioEffects';
 import { getPublicRockolaUrl } from './utils/publicUrl';
 import { THEMES } from './utils/themeStyles';
+import { peerSync } from './services/peerSync';
 
 const DEFAULT_STATE: RockolaRoomState = {
   name: 'Rockola Rafael García',
@@ -29,13 +30,42 @@ const DEFAULT_STATE: RockolaRoomState = {
 };
 
 export default function App() {
-  const [roomState, setRoomState] = useState<RockolaRoomState>(DEFAULT_STATE);
+  const [roomState, setRoomState] = useState<RockolaRoomState>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('rockola_room_state_v1');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (parsed && Array.isArray(parsed.queue)) {
+            return {
+              ...DEFAULT_STATE,
+              ...parsed,
+            };
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return DEFAULT_STATE;
+  });
   const [mode, setMode] = useState<'tv' | 'guest'>('tv');
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [showCastModal, setShowCastModal] = useState(false);
   const [showThemeModal, setShowThemeModal] = useState(false);
   const [deviceId, setDeviceId] = useState<string>('');
   const [tvUrl, setTvUrl] = useState<string>('');
+
+  // Persist state changes to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('rockola_room_state_v1', JSON.stringify(roomState));
+      } catch {
+        // ignore
+      }
+    }
+  }, [roomState]);
 
   // Detect mode & retrieve/generate deviceId
   useEffect(() => {
@@ -81,6 +111,10 @@ export default function App() {
               prev.queue.length === data.queue.length &&
               prev.theme === data.theme
             ) {
+              return prev;
+            }
+            // If server state is completely blank but locally we have a queue, preserve local queue
+            if (data.queue?.length === 0 && !data.currentSong && (prev.queue.length > 0 || prev.currentSong)) {
               return prev;
             }
             return {
@@ -146,6 +180,15 @@ export default function App() {
   // Handle adding a song
   const handleAddSong = useCallback(
     async (songData: Partial<SongItem> & { isPriority?: boolean }) => {
+      // 1. Direct WebRTC P2P transmission from Phone to TV
+      if (mode === 'guest') {
+        const sentPeer = peerSync.sendSongToHost(songData);
+        if (sentPeer) {
+          console.log('✅ Canción enviada directamente a la TV vía WebRTC P2P');
+        }
+      }
+
+      // 2. HTTP sync attempt (PHP on Hostinger or Node backend)
       try {
         const cleanId = songData.videoId || 'unknown';
         const res = await fetch('/api/queue', {
@@ -168,34 +211,68 @@ export default function App() {
           }));
           return;
         }
-        throw new Error(`Server returned ${res.status}`);
       } catch (err) {
-        console.warn('Handling song add locally:', err);
-        const cleanId = songData.videoId || 'unknown';
-        const newSong: SongItem = {
-          id: 'local_' + Date.now(),
-          videoId: cleanId,
-          title: songData.title || 'Canción',
-          artist: songData.artist || '',
-          thumbnail: songData.thumbnail || `https://img.youtube.com/vi/${cleanId}/hqdefault.jpg`,
-          votes: songData.isPriority ? 10 : 1,
-          voters: [deviceId],
-          addedAt: Date.now(),
-          isFirstPriority: songData.isPriority,
-        };
-        setRoomState((prev) => {
-          if (!prev.currentSong) {
-            return { ...prev, currentSong: newSong, isPlaying: true };
-          }
-          return {
-            ...prev,
-            queue: songData.isPriority ? [newSong, ...prev.queue] : [...prev.queue, newSong],
-          };
-        });
+        console.warn('API sync fallback to WebRTC / Local:', err);
       }
+
+      // 3. Local / Host state update
+      const cleanId = songData.videoId || 'unknown';
+      const newSong: SongItem = {
+        id: 'song_' + Date.now(),
+        videoId: cleanId,
+        title: songData.title || 'Canción',
+        artist: songData.artist || '',
+        thumbnail: songData.thumbnail || `https://img.youtube.com/vi/${cleanId}/hqdefault.jpg`,
+        votes: songData.isPriority ? 10 : 1,
+        voters: [deviceId],
+        addedAt: Date.now(),
+        isFirstPriority: songData.isPriority,
+      };
+      setRoomState((prev) => {
+        if (!prev.currentSong) {
+          return { ...prev, currentSong: newSong, isPlaying: true };
+        }
+        return {
+          ...prev,
+          queue: songData.isPriority ? [newSong, ...prev.queue] : [...prev.queue, newSong],
+        };
+      });
     },
-    [deviceId]
+    [deviceId, mode]
   );
+
+  // WebRTC P2P Room Synchronization Setup
+  useEffect(() => {
+    if (mode === 'tv') {
+      peerSync.initHost(
+        (song) => {
+          console.log('🎵 [TV Host] Canción recibida de celular vía WebRTC:', song.title);
+          handleAddSong(song);
+        },
+        (deviceCount) => {
+          console.log('📱 Celulares en línea:', deviceCount);
+        }
+      );
+    } else {
+      peerSync.initGuest((remoteState) => {
+        setRoomState((prev) => ({
+          ...prev,
+          ...remoteState,
+        }));
+      });
+    }
+
+    return () => {
+      peerSync.cleanup();
+    };
+  }, [mode, handleAddSong]);
+
+  // Broadcast TV state to all connected guest phones
+  useEffect(() => {
+    if (mode === 'tv') {
+      peerSync.broadcastToGuests(roomState);
+    }
+  }, [roomState, mode]);
 
   // Play next song
   const handleNextSong = useCallback(async () => {
