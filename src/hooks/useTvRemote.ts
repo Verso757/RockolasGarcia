@@ -18,57 +18,112 @@ export function useTvRemote({
   onOpenSearch,
 }: UseTvRemoteOptions) {
   useEffect(() => {
+    // 1. Samsung Tizen API: Register media keys if available
+    try {
+      const tizen = (window as unknown as { tizen?: { tvinputdevice?: { registerKey: (k: string) => void } } })?.tizen;
+      if (tizen?.tvinputdevice?.registerKey) {
+        const keysToRegister = [
+          'MediaPlay',
+          'MediaPause',
+          'MediaPlayPause',
+          'MediaTrackNext',
+          'MediaTrackPrevious',
+          'MediaFastForward',
+          'MediaRewind',
+          'MediaStop',
+          'ChannelUp',
+          'ChannelDown',
+        ];
+        keysToRegister.forEach((k) => {
+          try {
+            tizen.tvinputdevice?.registerKey(k);
+          } catch {
+            // ignore
+          }
+        });
+      }
+    } catch {
+      // ignore
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
       // Avoid intercepting when user is typing inside an input field
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
-        if (e.key === 'Escape') {
+        if (e.key === 'Escape' || e.keyCode === 10009 || e.keyCode === 27) {
           target.blur();
         }
         return;
       }
 
-      switch (e.key) {
-        // Physical TV Remote Media Keys
-        case 'MediaPlayPause':
-        case 'MediaPlay':
-        case 'MediaPause':
-        case 'k':
-        case 'K':
+      const keyCode = e.keyCode || e.which;
+      const key = e.key;
+
+      // 1. PLAY / PAUSE (Samsung Tizen: 10252, 415, 19 | LG webOS: 415, 19 | Standard: MediaPlayPause, Space)
+      if (
+        key === 'MediaPlayPause' ||
+        key === 'MediaPlay' ||
+        key === 'MediaPause' ||
+        key === ' ' ||
+        key === 'k' ||
+        key === 'K' ||
+        keyCode === 10252 || // Samsung OneRemote Play/Pause toggle
+        keyCode === 415 ||   // Samsung / LG Play
+        keyCode === 19       // Samsung / LG Pause
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        onPlayPause();
+        return;
+      }
+
+      // 2. NEXT SONG (Samsung Tizen: 417 FastFwd, 427 ChannelUp | Standard: MediaTrackNext, n)
+      if (
+        key === 'MediaTrackNext' ||
+        key === 'MediaFastForward' ||
+        key === 'n' ||
+        key === 'N' ||
+        keyCode === 417 || // Samsung FastForward
+        keyCode === 427    // Channel Up button on TV Remote
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        onNext();
+        return;
+      }
+
+      // 3. FULLSCREEN (f / F / Blue button / keyCode 406 on TV remotes)
+      if (
+        key === 'f' ||
+        key === 'F' ||
+        keyCode === 406 || // Samsung Blue button
+        keyCode === 405    // Samsung Yellow button
+      ) {
+        if (onToggleFullscreen) {
           e.preventDefault();
-          onPlayPause();
-          break;
+          e.stopPropagation();
+          onToggleFullscreen();
+          return;
+        }
+      }
 
-        case 'MediaTrackNext':
-        case 'n':
-        case 'N':
+      // 4. SEARCH / CATALOG (s / S / / / Red button / keyCode 403 on TV remotes)
+      if (
+        key === 's' ||
+        key === 'S' ||
+        key === '/' ||
+        keyCode === 403 // Samsung Red button
+      ) {
+        if (onOpenSearch) {
           e.preventDefault();
-          onNext();
-          break;
-
-        case 'f':
-        case 'F':
-          if (onToggleFullscreen) {
-            e.preventDefault();
-            onToggleFullscreen();
-          }
-          break;
-
-        case 's':
-        case 'S':
-        case '/':
-          if (onOpenSearch) {
-            e.preventDefault();
-            onOpenSearch();
-          }
-          break;
-
-        default:
-          break;
+          e.stopPropagation();
+          onOpenSearch();
+          return;
+        }
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [onPlayPause, onNext, onToggleFullscreen, onOpenSearch]);
 }

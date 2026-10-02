@@ -136,6 +136,20 @@ if (strpos($requestUri, '/player/pause') !== false) {
     exit;
 }
 
-// 6. Default response
+// 6. POST /api/player/sync
+if (strpos($requestUri, '/player/sync') !== false) {
+    $body = json_decode(file_get_contents('php://input'), true);
+    if ($body && isset($body['isPlaying'])) {
+        $state['isPlaying'] = (bool)$body['isPlaying'];
+    }
+    if ($body && !empty($body['currentSong'])) {
+        $state['currentSong'] = $body['currentSong'];
+    }
+    saveState($dataFile, $state);
+    echo json_encode(['ok' => true, 'state' => $state]);
+    exit;
+}
+
+// 7. Default response
 echo json_encode($state);
 exit;

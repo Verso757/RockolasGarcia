@@ -15,17 +15,20 @@ class PeerSyncService {
   private hostConnection: DataConnection | null = null;
   private isHost: boolean = false;
   private onSongAddedCallback?: (song: Partial<SongItem> & { isPriority?: boolean }) => void;
+  private onCommandCallback?: (command: { action: 'PLAY_PAUSE' | 'NEXT' | 'PLAY_NOW'; payload?: any }) => void;
   private onStateUpdatedCallback?: (state: Partial<RockolaRoomState>) => void;
   private onDeviceCountCallback?: (count: number) => void;
 
   // Initialize as TV (Host)
   public initHost(
     onSongAdded: (song: Partial<SongItem> & { isPriority?: boolean }) => void,
-    onDeviceCount?: (count: number) => void
+    onDeviceCount?: (count: number) => void,
+    onCommand?: (command: { action: 'PLAY_PAUSE' | 'NEXT' | 'PLAY_NOW'; payload?: any }) => void
   ) {
     this.isHost = true;
     this.onSongAddedCallback = onSongAdded;
     this.onDeviceCountCallback = onDeviceCount;
+    this.onCommandCallback = onCommand;
 
     this.cleanup();
 
@@ -45,6 +48,8 @@ class PeerSyncService {
         conn.on('data', (data: any) => {
           if (data && data.type === 'ADD_SONG' && data.song) {
             this.onSongAddedCallback?.(data.song);
+          } else if (data && data.type === 'REMOTE_COMMAND' && data.action) {
+            this.onCommandCallback?.({ action: data.action, payload: data.payload });
           }
         });
 
@@ -182,6 +187,23 @@ class PeerSyncService {
         return true;
       } catch (err) {
         console.warn('Error sending song over WebRTC:', err);
+      }
+    }
+    return false;
+  }
+
+  // Send playback control commands directly from Phone to TV
+  public sendCommandToHost(action: 'PLAY_PAUSE' | 'NEXT' | 'PLAY_NOW', payload?: any): boolean {
+    if (this.hostConnection && this.hostConnection.open) {
+      try {
+        this.hostConnection.send({
+          type: 'REMOTE_COMMAND',
+          action,
+          payload,
+        });
+        return true;
+      } catch (err) {
+        console.warn('Error sending remote command over WebRTC:', err);
       }
     }
     return false;

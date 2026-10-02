@@ -241,42 +241,12 @@ export default function App() {
     [deviceId, mode]
   );
 
-  // WebRTC P2P Room Synchronization Setup
-  useEffect(() => {
-    if (mode === 'tv') {
-      peerSync.initHost(
-        (song) => {
-          console.log('🎵 [TV Host] Canción recibida de celular vía WebRTC:', song.title);
-          handleAddSong(song);
-        },
-        (deviceCount) => {
-          console.log('📱 Celulares en línea:', deviceCount);
-        }
-      );
-    } else {
-      peerSync.initGuest((remoteState) => {
-        setRoomState((prev) => ({
-          ...prev,
-          ...remoteState,
-        }));
-      });
-    }
-
-    return () => {
-      peerSync.cleanup();
-    };
-  }, [mode, handleAddSong]);
-
-  // Broadcast TV state to all connected guest phones
-  useEffect(() => {
-    if (mode === 'tv') {
-      peerSync.broadcastToGuests(roomState);
-    }
-  }, [roomState, mode]);
-
   // Play next song
   const handleNextSong = useCallback(async () => {
     sounds.playNeedleDrop();
+    if (mode === 'guest') {
+      peerSync.sendCommandToHost('NEXT');
+    }
     try {
       const res = await fetch('/api/player/next', {
         method: 'POST',
@@ -314,21 +284,27 @@ export default function App() {
         };
       });
     }
-  }, []);
+  }, [mode]);
 
   // Play / Pause toggle
   const handlePlayPauseToggle = useCallback((playing: boolean) => {
     setRoomState((prev) => ({ ...prev, isPlaying: playing }));
+    if (mode === 'guest') {
+      peerSync.sendCommandToHost('PLAY_PAUSE', playing);
+    }
     fetch('/api/player/sync', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isPlaying: playing }),
     }).catch(() => {});
-  }, []);
+  }, [mode]);
 
   // Jump to song immediately
   const handlePlayNow = useCallback((song: SongItem) => {
     sounds.playNeedleDrop();
+    if (mode === 'guest') {
+      peerSync.sendCommandToHost('PLAY_NOW', song);
+    }
     setRoomState((prev) => {
       const newQueue = prev.queue.filter((s) => s.id !== song.id);
       const newHistory = prev.currentSong
@@ -348,7 +324,49 @@ export default function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ currentSong: song, isPlaying: true }),
     }).catch(() => {});
-  }, []);
+  }, [mode]);
+
+  // WebRTC P2P Room Synchronization Setup
+  useEffect(() => {
+    if (mode === 'tv') {
+      peerSync.initHost(
+        (song) => {
+          console.log('🎵 [TV Host] Canción recibida de celular vía WebRTC:', song.title);
+          handleAddSong(song);
+        },
+        (deviceCount) => {
+          console.log('📱 Celulares en línea:', deviceCount);
+        },
+        (command) => {
+          if (command.action === 'PLAY_PAUSE') {
+            handlePlayPauseToggle(typeof command.payload === 'boolean' ? command.payload : !roomState.isPlaying);
+          } else if (command.action === 'NEXT') {
+            handleNextSong();
+          } else if (command.action === 'PLAY_NOW' && command.payload) {
+            handlePlayNow(command.payload);
+          }
+        }
+      );
+    } else {
+      peerSync.initGuest((remoteState) => {
+        setRoomState((prev) => ({
+          ...prev,
+          ...remoteState,
+        }));
+      });
+    }
+
+    return () => {
+      peerSync.cleanup();
+    };
+  }, [mode, handleAddSong, handlePlayPauseToggle, handleNextSong, handlePlayNow, roomState.isPlaying]);
+
+  // Broadcast TV state to all connected guest phones
+  useEffect(() => {
+    if (mode === 'tv') {
+      peerSync.broadcastToGuests(roomState);
+    }
+  }, [roomState, mode]);
 
   // Move song to top (Pasar al primer puesto)
   const handleMoveToTop = useCallback(async (songId: string) => {
