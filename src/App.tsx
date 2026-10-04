@@ -258,6 +258,7 @@ export default function App() {
           currentSong: data.currentSong,
           queue: data.queue,
           isPlaying: !!data.currentSong,
+          currentSongStartedAt: data.currentSong ? Date.now() : undefined,
         }));
       }
     } catch {
@@ -274,6 +275,7 @@ export default function App() {
             queue: rest,
             history: newHistory,
             isPlaying: true,
+            currentSongStartedAt: Date.now(),
           };
         }
         return {
@@ -281,6 +283,7 @@ export default function App() {
           currentSong: null,
           history: newHistory,
           isPlaying: false,
+          currentSongStartedAt: undefined,
         };
       });
     }
@@ -316,14 +319,21 @@ export default function App() {
         queue: newQueue,
         history: newHistory,
         isPlaying: true,
+        currentSongStartedAt: Date.now(),
       };
     });
 
-    fetch('/api/player/sync', {
+    fetch('/api/player/play-now', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentSong: song, isPlaying: true }),
-    }).catch(() => {});
+      body: JSON.stringify({ song }),
+    }).catch(() => {
+      fetch('/api/player/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentSong: song, isPlaying: true }),
+      }).catch(() => {});
+    });
   }, [mode]);
 
   // WebRTC P2P Room Synchronization Setup

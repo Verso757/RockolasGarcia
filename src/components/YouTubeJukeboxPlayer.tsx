@@ -425,7 +425,7 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
         // ignore
       }
     }
-  }, [currentSong?.videoId, isReady]);
+  }, [currentSong?.id, currentSong?.videoId, isReady]);
 
   // Handle returning from background / tab switch / screen unlock
   useEffect(() => {
