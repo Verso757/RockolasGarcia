@@ -134,7 +134,93 @@ if (strpos($requestUri, '/state') !== false || isset($_GET['action']) && $_GET['
     exit;
 }
 
-// 2. POST /api/queue (Add song)
+// 2. Queue Item Operations (/queue/:id/top, /queue/:id/up, /queue/:id/down, DELETE /queue/:id)
+if (preg_match('#/queue/([^/]+)/top#', $requestUri, $m) || (isset($_GET['action']) && $_GET['action'] === 'queue-top')) {
+    $songId = $m[1] ?? ($_GET['id'] ?? '');
+    $foundIdx = -1;
+    foreach ($state['queue'] as $i => $s) {
+        if ($s['id'] === $songId) {
+            $foundIdx = $i;
+            break;
+        }
+    }
+    if ($foundIdx !== -1) {
+        $song = $state['queue'][$foundIdx];
+        array_splice($state['queue'], $foundIdx, 1);
+        $song['isFirstPriority'] = true;
+        array_unshift($state['queue'], $song);
+        saveState($dataFile, $state);
+        echo json_encode(['ok' => true, 'queue' => $state['queue']]);
+        exit;
+    }
+    http_response_code(404);
+    echo json_encode(['error' => 'Canción no encontrada en la cola']);
+    exit;
+}
+
+if (preg_match('#/queue/([^/]+)/up#', $requestUri, $m) || (isset($_GET['action']) && $_GET['action'] === 'queue-up')) {
+    $songId = $m[1] ?? ($_GET['id'] ?? '');
+    $foundIdx = -1;
+    foreach ($state['queue'] as $i => $s) {
+        if ($s['id'] === $songId) {
+            $foundIdx = $i;
+            break;
+        }
+    }
+    if ($foundIdx > 0) {
+        $temp = $state['queue'][$foundIdx];
+        $state['queue'][$foundIdx] = $state['queue'][$foundIdx - 1];
+        $state['queue'][$foundIdx - 1] = $temp;
+        saveState($dataFile, $state);
+    }
+    echo json_encode(['ok' => true, 'queue' => $state['queue']]);
+    exit;
+}
+
+if (preg_match('#/queue/([^/]+)/down#', $requestUri, $m) || (isset($_GET['action']) && $_GET['action'] === 'queue-down')) {
+    $songId = $m[1] ?? ($_GET['id'] ?? '');
+    $foundIdx = -1;
+    foreach ($state['queue'] as $i => $s) {
+        if ($s['id'] === $songId) {
+            $foundIdx = $i;
+            break;
+        }
+    }
+    if ($foundIdx !== -1 && $foundIdx < count($state['queue']) - 1) {
+        $temp = $state['queue'][$foundIdx];
+        $state['queue'][$foundIdx] = $state['queue'][$foundIdx + 1];
+        $state['queue'][$foundIdx + 1] = $temp;
+        saveState($dataFile, $state);
+    }
+    echo json_encode(['ok' => true, 'queue' => $state['queue']]);
+    exit;
+}
+
+if ($method === 'DELETE' && preg_match('#/queue/([^/]+)#', $requestUri, $m)) {
+    $songId = $m[1];
+    $state['queue'] = array_values(array_filter($state['queue'], function($s) use ($songId) {
+        return $s['id'] !== $songId;
+    }));
+    saveState($dataFile, $state);
+    echo json_encode(['ok' => true, 'queue' => $state['queue']]);
+    exit;
+}
+
+// Reorder queue with arbitrary fromIndex and toIndex
+if (strpos($requestUri, '/queue/reorder') !== false && $method === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $from = isset($body['fromIndex']) ? (int)$body['fromIndex'] : -1;
+    $to = isset($body['toIndex']) ? (int)$body['toIndex'] : -1;
+    if ($from >= 0 && $from < count($state['queue']) && $to >= 0 && $to < count($state['queue'])) {
+        $out = array_splice($state['queue'], $from, 1);
+        array_splice($state['queue'], $to, 0, $out);
+        saveState($dataFile, $state);
+    }
+    echo json_encode(['ok' => true, 'queue' => $state['queue']]);
+    exit;
+}
+
+// 3. POST /api/queue (Add song to queue)
 if ((strpos($requestUri, '/queue') !== false || isset($_GET['action']) && $_GET['action'] === 'queue') && $method === 'POST') {
     $body = json_decode(file_get_contents('php://input'), true);
     if (!$body || empty($body['videoId'])) {
@@ -179,18 +265,105 @@ if ((strpos($requestUri, '/queue') !== false || isset($_GET['action']) && $_GET[
     exit;
 }
 
-// 3. POST /api/player/next
+// 4. POST /api/player/next
 if (strpos($requestUri, '/player/next') !== false) {
+    if (!empty($state['currentSong'])) {
+        $played = $state['currentSong'];
+        $played['playedAt'] = round(microtime(true) * 1000);
+        $played['playCount'] = 1;
+        if (!isset($state['history']) || !is_array($state['history'])) {
+            $state['history'] = [];
+        }
+        array_unshift($state['history'], $played);
+        if (count($state['history']) > 25) {
+            array_pop($state['history']);
+        }
+    }
+
     if (!empty($state['queue'])) {
         $next = array_shift($state['queue']);
         $state['currentSong'] = $next;
         $state['isPlaying'] = true;
+        $state['currentSongStartedAt'] = round(microtime(true) * 1000);
     } else {
         $state['currentSong'] = null;
         $state['isPlaying'] = false;
+        $state['currentSongStartedAt'] = null;
     }
     saveState($dataFile, $state);
     echo json_encode(['ok' => true, 'currentSong' => $state['currentSong'], 'queue' => $state['queue']]);
+    exit;
+}
+
+// 5. POST /api/player/play-now
+if (strpos($requestUri, '/player/play-now') !== false && $method === 'POST') {
+    $body = json_decode(file_get_contents('php://input'), true);
+    $song = $body['song'] ?? null;
+    if ($song && !empty($song['videoId'])) {
+        if (!empty($state['currentSong'])) {
+            $played = $state['currentSong'];
+            $played['playedAt'] = round(microtime(true) * 1000);
+            $played['playCount'] = 1;
+            array_unshift($state['history'], $played);
+        }
+        $state['queue'] = array_values(array_filter($state['queue'], function($s) use ($song) {
+            return $s['id'] !== $song['id'];
+        }));
+        $state['currentSong'] = $song;
+        $state['isPlaying'] = true;
+        $state['currentSongStartedAt'] = round(microtime(true) * 1000);
+        saveState($dataFile, $state);
+        echo json_encode(['ok' => true, 'currentSong' => $state['currentSong'], 'queue' => $state['queue']]);
+        exit;
+    }
+}
+
+// 6. GET /api/song-trivia (Accurate music facts without unrelated text)
+if (strpos($requestUri, '/song-trivia') !== false) {
+    $title = trim($_GET['title'] ?? '');
+    $artist = trim($_GET['artist'] ?? '');
+    
+    $year = '';
+    $album = '';
+    $genre = '';
+    $curiosity = '';
+    
+    if ($title) {
+        $searchTerm = urlencode($title . ' ' . $artist);
+        $itunesUrl = "https://itunes.apple.com/search?term={$searchTerm}&entity=song&limit=1";
+        $ctx = stream_context_create(['http' => ['timeout' => 2]]);
+        $raw = @file_get_contents($itunesUrl, false, $ctx);
+        if ($raw) {
+            $json = json_decode($raw, true);
+            if (!empty($json['results'][0])) {
+                $track = $json['results'][0];
+                $album = $track['collectionName'] ?? '';
+                $genre = $track['primaryGenreName'] ?? '';
+                if (!empty($track['releaseDate'])) {
+                    $year = substr($track['releaseDate'], 0, 4);
+                }
+            }
+        }
+    }
+    
+    if (empty($curiosity)) {
+        if ($artist) {
+            $curiosity = "Tema destacado en el repertorio de {$artist}.";
+        } else {
+            $curiosity = "Canción que forma parte de la lista de reproducción.";
+        }
+    }
+    
+    echo json_encode([
+        'trivia' => [
+            'videoId' => $_GET['videoId'] ?? '',
+            'year' => $year ?: 'Clásico',
+            'album' => $album ?: 'Sencillo',
+            'genre' => $genre ?: 'Música',
+            'curiosity' => $curiosity,
+            'eraStyle' => 'modern'
+        ]
+    ]);
     exit;
 }
 

@@ -470,6 +470,36 @@ export default function App() {
     }
   }, []);
 
+  // Reorder queue arbitrary indices
+  const handleReorderQueue = useCallback(async (fromIndex: number, toIndex: number) => {
+    sounds.playButtonTick();
+    setRoomState((prev) => {
+      const q = [...prev.queue];
+      if (fromIndex >= 0 && fromIndex < q.length && toIndex >= 0 && toIndex < q.length) {
+        const [moved] = q.splice(fromIndex, 1);
+        q.splice(toIndex, 0, moved);
+        return { ...prev, queue: q };
+      }
+      return prev;
+    });
+
+    try {
+      const res = await fetch('/api/queue/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fromIndex, toIndex }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.queue) {
+          setRoomState((prev) => ({ ...prev, queue: data.queue }));
+        }
+      }
+    } catch {
+      // optimistic update retained
+    }
+  }, []);
+
   // Clear queue
   const handleClearQueue = useCallback(async () => {
     try {
@@ -530,6 +560,11 @@ export default function App() {
           roomState={roomState}
           onAddSong={handleAddSong}
           onMoveToTop={handleMoveToTop}
+          onMoveUp={handleMoveUp}
+          onMoveDown={handleMoveDown}
+          onRemoveSong={handleRemoveSong}
+          onReorderQueue={handleReorderQueue}
+          onPlayNow={handlePlayNow}
           onPlayPauseToggle={handlePlayPauseToggle}
           onNextSong={handleNextSong}
           onSelectTheme={handleSelectTheme}

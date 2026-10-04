@@ -730,6 +730,37 @@ app.post('/api/queue/clear', (_req: Request, res: Response) => {
   res.json({ ok: true, queue: state.queue });
 });
 
+// Reorder queue arbitrary indices
+app.post('/api/queue/reorder', (req: Request, res: Response) => {
+  const { fromIndex, toIndex } = req.body;
+  const from = Number(fromIndex);
+  const to = Number(toIndex);
+  if (!isNaN(from) && !isNaN(to) && from >= 0 && from < state.queue.length && to >= 0 && to < state.queue.length) {
+    const [moved] = state.queue.splice(from, 1);
+    state.queue.splice(to, 0, moved);
+    broadcastState('queue_reordered');
+    return res.json({ ok: true, queue: state.queue });
+  }
+  res.status(400).json({ error: 'Índices inválidos' });
+});
+
+// Play now
+app.post('/api/player/play-now', (req: Request, res: Response) => {
+  const { song } = req.body;
+  if (song && song.videoId) {
+    if (state.currentSong) {
+      recordSongInHistory(state.currentSong);
+    }
+    state.queue = state.queue.filter((s) => s.id !== song.id);
+    state.currentSong = song;
+    state.isPlaying = true;
+    state.currentSongStartedAt = Date.now();
+    broadcastState('song_changed');
+    return res.json({ ok: true, currentSong: state.currentSong, queue: state.queue });
+  }
+  res.status(400).json({ error: 'Canción inválida' });
+});
+
 // Toggle AutoPlay DJ mode
 app.post('/api/settings/autoplay', (req: Request, res: Response) => {
   const { autoPlayDj } = req.body;

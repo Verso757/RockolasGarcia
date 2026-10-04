@@ -15,34 +15,20 @@ interface FactItem {
   text: string;
 }
 
-const GENERAL_FACTS: FactItem[] = [
+const DEFAULT_FACTS: FactItem[] = [
   {
     id: 'f1',
-    category: 'ROCKOLAS GARCÍA',
-    icon: '👑',
-    badge: 'Tradición',
-    text: 'En la rockola de Rafael García, la regla de oro es cantar con el alma y brindar en familia con cada canción pedida.',
+    category: 'MÚSICA EN VIVO',
+    icon: '🎵',
+    badge: 'Rockola',
+    text: 'Reproducción continua y sincronizada en tiempo real para todos los invitados.',
   },
   {
     id: 'f2',
-    category: 'ÉPOCA DE ORO',
-    icon: '🎺',
-    badge: 'Historia',
-    text: 'Vicente Fernández popularizó la mítica frase: "Mientras ustedes no dejen de aplaudir, su Chente no deja de cantar".',
-  },
-  {
-    id: 'f3',
-    category: 'EL DIVO DE JUÁREZ',
-    icon: '⭐',
-    badge: 'Anécdota',
-    text: 'Juan Gabriel compuso más de 1,800 temas y llenó el Palacio de Bellas Artes rompiendo todos los récords de la música popular.',
-  },
-  {
-    id: 'f4',
-    category: 'MÚSICA INMORTAL',
+    category: 'SISTEMA DE AUDIO',
     icon: '📻',
-    badge: 'Rockolas',
-    text: 'Las primeras rockolas digitales de cantina nacieron para que el público fuera el dueño absoluto del ambiente y la música.',
+    badge: 'Hi-Fi',
+    text: 'Escanea el código QR en pantalla con tu celular para buscar y agregar canciones a la lista.',
   },
 ];
 
@@ -50,7 +36,7 @@ export const VideoTriviaOverlay: React.FC<VideoTriviaOverlayProps> = ({
   currentSong,
   isPlaying,
 }) => {
-  const [facts, setFacts] = useState<FactItem[]>(GENERAL_FACTS);
+  const [facts, setFacts] = useState<FactItem[]>(DEFAULT_FACTS);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -60,7 +46,7 @@ export const VideoTriviaOverlay: React.FC<VideoTriviaOverlayProps> = ({
   // Fetch trivia when current song changes
   useEffect(() => {
     if (!currentSong) {
-      setFacts(GENERAL_FACTS);
+      setFacts(DEFAULT_FACTS);
       setCurrentIndex(0);
       return;
     }
@@ -73,64 +59,113 @@ export const VideoTriviaOverlay: React.FC<VideoTriviaOverlayProps> = ({
           artist: currentSong.artist || '',
           videoId: currentSong.videoId,
         });
-        const res = await fetch(`/api/song-trivia?${query.toString()}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted && data.trivia) {
-            const t = data.trivia;
-            const newFacts: FactItem[] = [];
 
-            // 1. Dato Curioso principal
-            if (t.curiosity) {
-              newFacts.push({
-                id: 'curiosity',
-                category: 'DATO CURIOSO',
-                icon: '💡',
-                badge: t.year || 'Clásico',
-                text: t.curiosity,
-              });
-            }
-
-            // 2. Historia y Álbum
-            if (t.year || t.album) {
-              newFacts.push({
-                id: 'history',
-                category: 'LANZAMIENTO',
-                icon: '📅',
-                badge: t.year || 'Éxito',
-                text: `${t.album ? `Tema del álbum "${t.album}". ` : ''}${t.anecdote || 'Una de las piezas más aclamadas de la música hispana.'}`,
-              });
-            }
-
-            // 3. Estilo y Género
-            if (t.genre) {
-              newFacts.push({
-                id: 'style',
-                category: 'GÉNERO & ESTILO',
-                icon: '🎵',
-                badge: t.genre,
-                text: `Sonido emblemático que llena las cantinas y fiestas mexicanas, convirtiéndose en un himno indiscutible.`,
-              });
-            }
-
-            // 4. Dato del Artista y Familia García
-            newFacts.push({
-              id: 'artist',
-              category: 'EN ROCKOLAS GARCÍA',
-              icon: '👑',
-              badge: currentSong.artist || 'Música',
-              text: `Interpretada magistralmente por ${currentSong.artist || 'grandes leyendas'}. Una de las consentidas de mi papá Rafael para cantar a coro en familia.`,
-            });
-
-            if (newFacts.length > 0) {
-              setFacts(newFacts);
-              setCurrentIndex(0);
-              setProgress(0);
+        // 1. Try server endpoint first
+        let triviaData: any = null;
+        try {
+          const res = await fetch(`/api/song-trivia?${query.toString()}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.trivia && data.trivia.curiosity) {
+              triviaData = data.trivia;
             }
           }
+        } catch {
+          // ignore
+        }
+
+        // 2. If server didn't provide specific metadata, query iTunes API directly from client
+        if (!triviaData || !triviaData.album) {
+          try {
+            const cleanSearch = `${currentSong.title} ${currentSong.artist || ''}`.replace(/\(.*?\)|\[.*?\]/g, '').trim();
+            const itunesRes = await fetch(
+              `https://itunes.apple.com/search?term=${encodeURIComponent(cleanSearch)}&entity=song&limit=1`
+            );
+            if (itunesRes.ok) {
+              const itunesJson = await itunesRes.json();
+              if (itunesJson.results && itunesJson.results.length > 0) {
+                const track = itunesJson.results[0];
+                triviaData = {
+                  year: track.releaseDate ? track.releaseDate.substring(0, 4) : (triviaData?.year || ''),
+                  album: track.collectionName || (triviaData?.album || ''),
+                  genre: track.primaryGenreName || (triviaData?.genre || ''),
+                  curiosity: triviaData?.curiosity || `Tema de ${track.artistName || currentSong.artist || 'este artista'}.`,
+                };
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        if (isMounted) {
+          const newFacts: FactItem[] = [];
+
+          // 1. Dato Curioso principal (strictly about the song)
+          if (triviaData?.curiosity && !triviaData.curiosity.includes('Vicente') && !triviaData.curiosity.includes('Rafael')) {
+            newFacts.push({
+              id: 'curiosity',
+              category: 'DATO CURIOSO',
+              icon: '💡',
+              badge: triviaData.year || 'Canción',
+              text: triviaData.curiosity,
+            });
+          }
+
+          // 2. Álbum y Lanzamiento
+          if (triviaData?.album || triviaData?.year) {
+            const details: string[] = [];
+            if (triviaData.album) details.push(`Álbum: "${triviaData.album}"`);
+            if (triviaData.year) details.push(`Año: ${triviaData.year}`);
+            if (triviaData.genre) details.push(`Género: ${triviaData.genre}`);
+
+            newFacts.push({
+              id: 'history',
+              category: 'INFORMACIÓN DEL TEMA',
+              icon: '📅',
+              badge: triviaData.year || 'Lanzamiento',
+              text: details.join(' • '),
+            });
+          }
+
+          // 3. Artista / Intérprete
+          if (currentSong.artist) {
+            newFacts.push({
+              id: 'artist',
+              category: 'ARTISTA',
+              icon: '🎤',
+              badge: currentSong.artist,
+              text: `Interpretada por ${currentSong.artist}.`,
+            });
+          }
+
+          // Fallback fact if nothing was returned
+          if (newFacts.length === 0) {
+            newFacts.push({
+              id: 'song-now',
+              category: 'REPRODUCIENDO',
+              icon: '🎵',
+              badge: 'En vivo',
+              text: `"${currentSong.title}" ${currentSong.artist ? `de ${currentSong.artist}` : ''}.`,
+            });
+          }
+
+          setFacts(newFacts);
+          setCurrentIndex(0);
+          setProgress(0);
         }
       } catch {
-        // keep defaults
+        if (isMounted) {
+          setFacts([
+            {
+              id: 'song-now',
+              category: 'REPRODUCIENDO',
+              icon: '🎵',
+              badge: 'En vivo',
+              text: `"${currentSong.title}" ${currentSong.artist ? `de ${currentSong.artist}` : ''}.`,
+            },
+          ]);
+        }
       }
     };
 

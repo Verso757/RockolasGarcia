@@ -14,6 +14,9 @@ import {
   Star,
   Cast,
   Tv,
+  ChevronUp,
+  ChevronDown,
+  Trash2,
 } from 'lucide-react';
 import { sounds } from '../utils/audioEffects';
 import { CANTINA_ARTIST_CARDS, CantinaArtistCard, CantinaSong } from '../data/catalogo';
@@ -24,6 +27,11 @@ interface GuestRequestViewProps {
   roomState: RockolaRoomState;
   onAddSong: (song: Partial<SongItem> & { isPriority?: boolean }) => Promise<boolean | void>;
   onMoveToTop: (songId: string) => void;
+  onMoveUp?: (songId: string) => void;
+  onMoveDown?: (songId: string) => void;
+  onRemoveSong?: (songId: string) => void;
+  onReorderQueue?: (fromIndex: number, toIndex: number) => void;
+  onPlayNow?: (song: SongItem) => void;
   onPlayPauseToggle: (playing: boolean) => void;
   onNextSong: () => void;
   onSelectTheme?: (theme: RockolaTheme) => void;
@@ -147,6 +155,11 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
   roomState,
   onAddSong,
   onMoveToTop,
+  onMoveUp,
+  onMoveDown,
+  onRemoveSong,
+  onReorderQueue,
+  onPlayNow,
   onPlayPauseToggle,
   onNextSong,
   onOpenCast,
@@ -558,12 +571,31 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
                 {roomState.queue.map((song, idx) => (
                   <div
                     key={song.id}
-                    className="flex items-center justify-between gap-2.5 rounded-xl border border-gray-800 bg-black/60 p-2.5 hover:border-gray-700 transition"
+                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border border-gray-800 bg-black/70 p-2.5 hover:border-gray-700 transition"
                   >
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <span className="font-mono text-xs font-black text-cyan-300 bg-gray-900 border border-gray-700 px-2 py-1 rounded shrink-0">
-                        #{idx + 1}
-                      </span>
+                      {/* Selector directo de turno o número */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        <select
+                          value={idx + 1}
+                          onChange={(e) => {
+                            sounds.playButtonTick();
+                            const targetIdx = Number(e.target.value) - 1;
+                            if (targetIdx !== idx) {
+                              onReorderQueue?.(idx, targetIdx);
+                            }
+                          }}
+                          className="font-mono text-xs font-black text-cyan-300 bg-gray-900 border border-gray-700 rounded px-1 py-1 cursor-pointer hover:border-cyan-500 focus:outline-none"
+                          title="Cambiar turno en la lista"
+                        >
+                          {roomState.queue.map((_, i) => (
+                            <option key={i} value={i + 1}>
+                              #{i + 1}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
                       <SongThumbnail
                         src={song.thumbnail}
                         videoId={song.videoId}
@@ -576,20 +608,86 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Mover al 1er Puesto */}
-                    {idx > 0 && (
+                    {/* Botonera de acciones para mover el orden y reproducir */}
+                    <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                      {/* Poner de primero */}
+                      {idx > 0 && (
+                        <button
+                          onClick={() => {
+                            sounds.playButtonTick();
+                            onMoveToTop(song.id);
+                          }}
+                          className="flex items-center gap-1 rounded-lg bg-amber-400 hover:bg-amber-300 px-2 py-1 text-[10px] font-black text-black active:scale-95 transition"
+                          title="Poner de primero en la fila"
+                        >
+                          <Star className="h-3 w-3 fill-current" />
+                          <span>1° Puesto</span>
+                        </button>
+                      )}
+
+                      {/* Subir un turno */}
                       <button
+                        disabled={idx === 0}
                         onClick={() => {
                           sounds.playButtonTick();
-                          onMoveToTop(song.id);
+                          onMoveUp?.(song.id);
                         }}
-                        className="flex items-center gap-1 rounded-lg bg-amber-400 hover:bg-amber-300 px-2.5 py-1 text-[11px] font-black text-black active:scale-95 transition shrink-0"
-                        title="Pasar al 1° turno"
+                        className={`rounded-lg border p-1 text-xs transition active:scale-95 ${
+                          idx === 0
+                            ? 'border-gray-800 text-gray-600 cursor-not-allowed'
+                            : 'border-gray-700 bg-gray-900 text-cyan-400 hover:bg-gray-800'
+                        }`}
+                        title="Subir un turno arriba"
                       >
-                        <Star className="h-3 w-3 fill-current" />
-                        <span>1° Puesto</span>
+                        <ChevronUp className="h-3.5 w-3.5" />
                       </button>
-                    )}
+
+                      {/* Bajar un turno */}
+                      <button
+                        disabled={idx === roomState.queue.length - 1}
+                        onClick={() => {
+                          sounds.playButtonTick();
+                          onMoveDown?.(song.id);
+                        }}
+                        className={`rounded-lg border p-1 text-xs transition active:scale-95 ${
+                          idx === roomState.queue.length - 1
+                            ? 'border-gray-800 text-gray-600 cursor-not-allowed'
+                            : 'border-gray-700 bg-gray-900 text-cyan-400 hover:bg-gray-800'
+                        }`}
+                        title="Bajar un turno abajo"
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+
+                      {/* Tocar ahora mismo */}
+                      {onPlayNow && (
+                        <button
+                          onClick={() => {
+                            sounds.playNeedleDrop();
+                            onPlayNow(song);
+                          }}
+                          className="flex items-center gap-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 px-2 py-1 text-[10px] font-black text-white active:scale-95 transition"
+                          title="Reproducir ahora mismo"
+                        >
+                          <Play className="h-3 w-3 fill-current" />
+                          <span>Tocar ya</span>
+                        </button>
+                      )}
+
+                      {/* Quitar de la lista */}
+                      {onRemoveSong && (
+                        <button
+                          onClick={() => {
+                            sounds.playButtonTick();
+                            onRemoveSong(song.id);
+                          }}
+                          className="rounded-lg border border-red-900/50 bg-red-950/30 p-1 text-red-400 hover:bg-red-900/50 transition active:scale-95"
+                          title="Quitar de la lista"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

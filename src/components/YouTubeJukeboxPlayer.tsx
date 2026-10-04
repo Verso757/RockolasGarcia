@@ -12,6 +12,8 @@ import {
   Search,
   Disc3,
   Sparkles,
+  Pin,
+  PinOff,
 } from 'lucide-react';
 import { sounds } from '../utils/audioEffects';
 import { VideoTriviaOverlay } from './VideoTriviaOverlay';
@@ -62,7 +64,8 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
   const [duration, setDuration] = useState(0);
   const [needUserGesture, setNeedUserGesture] = useState(false);
 
-  // Auto-hide controls timer
+  // Bottom controls pinned state (default pinned to keep menu always visible on TV)
+  const [isPinnedControls, setIsPinnedControls] = useState(true);
   const [showControls, setShowControls] = useState(true);
   const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -146,13 +149,14 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
     }
   }, [currentSong?.videoId]);
 
-  // Auto-hide controls when mouse is inactive
+  // Controls visibility management (never hide if pinned)
   const handleUserActivity = () => {
     setShowControls(true);
+    if (isPinnedControls) return;
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     controlsTimeoutRef.current = setTimeout(() => {
       setShowControls(false);
-    }, 3500);
+    }, 4500);
   };
 
   useEffect(() => {
@@ -777,10 +781,10 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
         </div>
       )}
 
-      {/* CONTROLES FLOTANTES DISCRETOS (AUTO-HIDE A LOS 3s) */}
+      {/* CONTROLES INFERIORES DE LA TELE (FIJADOS POR DEFECTO PARA SMART TV) */}
       <div
-        className={`absolute inset-x-0 bottom-0 z-30 transition-all duration-300 p-4 bg-gradient-to-t from-black via-black/80 to-transparent ${
-          showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6 pointer-events-none'
+        className={`absolute inset-x-0 bottom-0 z-30 transition-all duration-300 p-3 sm:p-4 bg-gradient-to-t from-black via-black/85 to-transparent ${
+          isPinnedControls || showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6 pointer-events-none'
         }`}
       >
         <div className="mx-auto max-w-5xl flex flex-col gap-2">
@@ -817,6 +821,15 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
                 <SkipForward className="h-4 w-4" />
                 <span>Siguiente</span>
               </button>
+
+              <button
+                onClick={onOpenSearch}
+                className="flex h-11 px-3.5 items-center justify-center gap-1.5 rounded-xl border border-gray-700 bg-gray-900/90 text-amber-300 hover:bg-gray-800 transition text-xs font-black active:scale-95"
+                title="Buscar canción en YouTube"
+              >
+                <Search className="h-4 w-4" />
+                <span>Buscar</span>
+              </button>
             </div>
 
             {/* Centro: Info actual */}
@@ -827,8 +840,8 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
               </div>
             )}
 
-            {/* Controles de volumen y acceso a celular */}
-            <div className="flex items-center gap-2.5">
+            {/* Controles de volumen, celular, fijar y pantalla completa */}
+            <div className="flex items-center gap-2">
               <div className="flex items-center gap-1.5 bg-black/60 border border-gray-800 rounded-lg px-2 py-1">
                 <button
                   onClick={handleToggleMute}
@@ -842,7 +855,7 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
                   max="100"
                   value={isMuted ? 0 : volume}
                   onChange={handleVolumeChange}
-                  className="h-1.5 w-16 sm:w-24 accent-cyan-400 cursor-pointer"
+                  className="h-1.5 w-16 sm:w-20 accent-cyan-400 cursor-pointer"
                 />
               </div>
 
@@ -857,6 +870,23 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
                 </button>
               )}
 
+              {/* Fijar barra permanente en TV */}
+              <button
+                onClick={() => {
+                  sounds.playButtonTick();
+                  setIsPinnedControls(!isPinnedControls);
+                }}
+                className={`flex h-9 items-center gap-1 px-2 rounded-xl border text-xs font-mono transition ${
+                  isPinnedControls
+                    ? 'border-cyan-500/50 bg-cyan-950/40 text-cyan-300'
+                    : 'border-gray-700 bg-gray-900 text-gray-400 hover:text-white'
+                }`}
+                title={isPinnedControls ? 'Barra fijada en pantalla (clic para ocultar automático)' : 'Fijar barra de forma permanente'}
+              >
+                {isPinnedControls ? <Pin className="h-3.5 w-3.5 fill-current" /> : <PinOff className="h-3.5 w-3.5" />}
+                <span className="hidden xl:inline">{isPinnedControls ? 'Fijo' : 'Auto'}</span>
+              </button>
+
               <button
                 onClick={handleFullscreen}
                 className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white transition"
@@ -868,6 +898,16 @@ export const YouTubeJukeboxPlayer: React.FC<YouTubeJukeboxPlayerProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Botón flotante para restaurar menú si está desfijado y oculto */}
+      {!isPinnedControls && !showControls && (
+        <button
+          onClick={() => setShowControls(true)}
+          className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-full bg-black/85 border border-cyan-500/40 px-3.5 py-1 text-xs font-mono font-bold text-cyan-300 shadow-xl backdrop-blur-md transition hover:scale-105"
+        >
+          <span>▲ Controles de la TV</span>
+        </button>
+      )}
 
       {/* HUD DE CONTROL REMOTO (SAMSUNG SMART TV OSD) */}
       {remoteHud && (
