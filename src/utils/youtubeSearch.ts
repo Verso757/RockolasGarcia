@@ -54,22 +54,7 @@ export async function searchYouTubeUniversal(query: string): Promise<SearchVideo
     ];
   }
 
-  // 2. Local Catalog Instant Matches
-  const localMatches: SearchVideoResult[] = CATALOGO_FAMILIAR_DON_RAFA
-    .filter(
-      (item) =>
-        item.title.toLowerCase().includes(cleanQuery) ||
-        item.artist.toLowerCase().includes(cleanQuery)
-    )
-    .map((item) => ({
-      videoId: item.videoId,
-      title: item.title,
-      artist: item.artist,
-      thumbnail: `https://img.youtube.com/vi/${item.videoId}/hqdefault.jpg`,
-      duration: item.duration || '',
-    }));
-
-  // 3. Try local Node.js backend (/api/youtube-search or /api/search)
+  // 2. Try local Node.js backend (/api/youtube-search or /api/search)
   for (const endpoint of ['/api/youtube-search', '/api/search']) {
     try {
       const localRes = await fetch(`${endpoint}?q=${encodeURIComponent(query.trim())}`, {
@@ -78,26 +63,23 @@ export async function searchYouTubeUniversal(query: string): Promise<SearchVideo
       if (localRes.ok) {
         const data = await localRes.json();
         if (Array.isArray(data.results) && data.results.length > 0) {
-          // Merge without duplicates and normalize thumbnails
+          // Normalize thumbnails and deduplicate without altering YouTube relevance order
           const seen = new Set<string>();
-          const combined: SearchVideoResult[] = [];
+          const results: SearchVideoResult[] = [];
 
           for (const r of data.results as SearchVideoResult[]) {
             if (r.videoId && !seen.has(r.videoId)) {
               seen.add(r.videoId);
-              combined.push({
+              results.push({
                 ...r,
                 thumbnail: `https://img.youtube.com/vi/${r.videoId}/hqdefault.jpg`,
               });
             }
           }
 
-          for (const lm of localMatches) {
-            if (!seen.has(lm.videoId)) {
-              combined.unshift(lm);
-            }
+          if (results.length > 0) {
+            return results;
           }
-          return combined;
         }
       }
     } catch {
@@ -105,7 +87,7 @@ export async function searchYouTubeUniversal(query: string): Promise<SearchVideo
     }
   }
 
-  // 4. Fallback: Client-side direct query to high-availability Invidious search mirrors
+  // 3. Fallback: Client-side direct query to high-availability Invidious search mirrors
   for (const mirror of CORS_INVIDIOUS_MIRRORS) {
     try {
       const mirrorRes = await fetch(
@@ -128,14 +110,9 @@ export async function searchYouTubeUniversal(query: string): Promise<SearchVideo
               : '',
           }));
 
-          const seen = new Set(mapped.map((r) => r.videoId));
-          const combined: SearchVideoResult[] = [...mapped];
-          for (const lm of localMatches) {
-            if (!seen.has(lm.videoId)) {
-              combined.unshift(lm);
-            }
+          if (mapped.length > 0) {
+            return mapped;
           }
-          return combined;
         }
       }
     } catch {
@@ -143,5 +120,36 @@ export async function searchYouTubeUniversal(query: string): Promise<SearchVideo
     }
   }
 
-  return localMatches;
+  // 4. Offline / No-network fallback: strictly match local catalog ONLY if relevant
+  if (cleanQuery.length >= 2) {
+    const scoredMatches = CATALOGO_FAMILIAR_DON_RAFA
+      .map((item) => {
+        const titleLower = item.title.toLowerCase();
+        const artistLower = item.artist.toLowerCase();
+        let score = 0;
+
+        if (titleLower === cleanQuery || artistLower === cleanQuery) {
+          score = 100;
+        } else if (titleLower.startsWith(cleanQuery) || artistLower.startsWith(cleanQuery)) {
+          score = 80;
+        } else if (titleLower.includes(cleanQuery) || artistLower.includes(cleanQuery)) {
+          score = 50;
+        }
+
+        return { item, score };
+      })
+      .filter((m) => m.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((m) => ({
+        videoId: m.item.videoId,
+        title: m.item.title,
+        artist: m.item.artist,
+        thumbnail: `https://img.youtube.com/vi/${m.item.videoId}/hqdefault.jpg`,
+        duration: m.item.duration || '',
+      }));
+
+    return scoredMatches;
+  }
+
+  return [];
 }

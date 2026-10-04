@@ -12,11 +12,12 @@ import {
   Compass,
   Plus,
   Star,
-  Cast,
   Tv,
   ChevronUp,
   ChevronDown,
   Trash2,
+  X,
+  Sparkles,
 } from 'lucide-react';
 import { sounds } from '../utils/audioEffects';
 import { CANTINA_ARTIST_CARDS, CantinaArtistCard, CantinaSong } from '../data/catalogo';
@@ -89,7 +90,7 @@ const GENRE_CATEGORIES: GenreCategory[] = [
   {
     id: 'oldies_ingles',
     name: 'Oldies & Clásicos en Inglés',
-    subtitle: 'Queen, The Beatles, Michael Jackson, 60s, 70s y 80s',
+    subtitle: 'Queen, Pink Floyd, The Beatles, Michael Jackson',
     icon: '📻',
     gradient: 'from-blue-950 via-indigo-950 to-black',
     accent: '#38bdf8',
@@ -142,13 +143,24 @@ const GENRE_CATEGORIES: GenreCategory[] = [
   },
   {
     id: 'todos',
-    name: 'Ver Todos los Discos',
-    subtitle: 'Explorar todo el catálogo completo de la rockola',
-    icon: '💿',
+    name: 'Ver Todo el Repertorio',
+    subtitle: 'Catálogo completo sin restricciones',
+    icon: '🎶',
     gradient: 'from-gray-800 via-gray-900 to-black',
     accent: '#22d3ee',
     filterKey: 'TODOS',
   },
+];
+
+const QUICK_SEARCH_PILLS = [
+  { label: '🎺 Mariachi', query: 'mariachi clasicos' },
+  { label: '🤠 Norteño', query: 'norteño fiesta' },
+  { label: '💃 Cumbias', query: 'cumbias para bailar' },
+  { label: '🎸 Rock en Español', query: 'rock en español 80s 90s' },
+  { label: '📻 Rock Clásico', query: 'classic rock hits' },
+  { label: '🎤 Baladas', query: 'baladas del recuerdo' },
+  { label: '⭐ Juan Gabriel', query: 'juan gabriel exitos' },
+  { label: '🍻 Cantina', query: 'canciones de cantina' },
 ];
 
 export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
@@ -165,8 +177,8 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
   onOpenCast,
   onBackToTV,
 }) => {
-  // Navigation View: 'home' (Queue & Search) | 'genres' (Big Genre Cards) | 'disco_wall' (Artist Discs)
-  const [currentView, setCurrentView] = useState<'home' | 'genres' | 'disco_wall'>('home');
+  // Navigation View: 'home' (Queue & Quick Search) | 'search' (Full YouTube Search) | 'genres' (Genre Cards) | 'disco_wall' (Artist Discs)
+  const [currentView, setCurrentView] = useState<'home' | 'search' | 'genres' | 'disco_wall'>('home');
   const [activeGenre, setActiveGenre] = useState<GenreCategory>(GENRE_CATEGORIES[0]);
 
   // YouTube live search input
@@ -194,6 +206,16 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
   const [activeSongPrompt, setActiveSongPrompt] = useState<CantinaSong | null>(null);
 
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Focus search input when switching to search view
+  useEffect(() => {
+    if (currentView === 'search') {
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 100);
+    }
+  }, [currentView]);
 
   // Filter artists according to active genre
   const filteredArtists = useMemo(() => {
@@ -252,51 +274,50 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
     setActiveSongPrompt(song);
   };
 
-  const handleConfirmAddSong = async (song: CantinaSong, isPriority = false) => {
+  const handleConfirmAddSong = async (song: CantinaSong, isPriority: boolean) => {
     sounds.playCoinInsert();
     setActiveSongPrompt(null);
-
     await onAddSong({
-      videoId: song.videoId,
       title: song.title,
       artist: song.artist,
-      thumbnail: `https://img.youtube.com/vi/${song.videoId}/hqdefault.jpg`,
+      videoId: song.videoId,
       isPriority,
     });
-
     setNotification(
       isPriority
-        ? `⭐ [${song.code}] ¡Pasó al 1° puesto!: ${song.title}`
-        : `🎵 [${song.code}] ¡Agregada a la lista!: ${song.title}`
+        ? `⭐ ¡"${song.title}" puesta de 1° puesto!`
+        : `🎵 "${song.title}" agregada a la lista`
     );
-    setTimeout(() => setNotification(null), 3000);
+    setTimeout(() => setNotification(null), 3500);
   };
 
-  const handleAddYouTubeResult = async (video: { videoId: string; title: string; artist: string }, isPriority = false) => {
+  const handleAddYouTubeResult = async (
+    video: { videoId: string; title: string; artist: string; thumbnail: string },
+    isPriority: boolean
+  ) => {
     sounds.playCoinInsert();
     await onAddSong({
       videoId: video.videoId,
       title: video.title,
       artist: video.artist,
-      thumbnail: `https://img.youtube.com/vi/${video.videoId}/hqdefault.jpg`,
+      thumbnail: video.thumbnail,
       isPriority,
     });
-
     setNotification(
       isPriority
-        ? `⭐ ¡Pasó al 1° puesto!: ${video.title}`
-        : `🎶 ¡Agregada a la lista!: ${video.title}`
+        ? `⭐ ¡"${video.title}" puesta de 1° puesto!`
+        : `🎵 "${video.title}" agregada a la lista`
     );
-    setTimeout(() => setNotification(null), 3000);
+    setTimeout(() => setNotification(null), 3500);
   };
 
-  // Add custom artist to active genre
+  // Custom artist disc creation
   const handleCreateArtistDisc = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!customArtistInput.trim()) return;
 
-    setIsAddingCustomArtist(true);
     sounds.playButtonTick();
+    setIsAddingCustomArtist(true);
 
     try {
       const results = await searchYouTubeUniversal(`${customArtistInput.trim()} exitos`);
@@ -335,81 +356,58 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
   };
 
   return (
-    <div className="min-h-screen bg-[#0e1014] text-white flex flex-col font-sans select-none pb-20">
+    <div className="min-h-screen bg-[#0a0c10] text-white flex flex-col font-sans select-none pb-32">
       {/* Toast Notification */}
       {notification && (
-        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-xs font-black text-black shadow-2xl animate-in fade-in slide-in-from-top-3 border border-emerald-300 flex items-center gap-2">
-          <CheckCircle2 className="h-4 w-4" />
-          <span>{notification}</span>
+        <div className="fixed top-3 inset-x-4 max-w-sm mx-auto z-50 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-3 text-xs font-black text-black shadow-2xl animate-in fade-in slide-in-from-top-3 border border-emerald-300 flex items-center gap-2.5">
+          <CheckCircle2 className="h-5 w-5 shrink-0" />
+          <span className="truncate">{notification}</span>
         </div>
       )}
 
-      {/* HEADER SUPERIOR CON BOTÓN "ENVIAR A TV" Y "NAVEGAR DISCOS" */}
-      <header className="sticky top-0 z-40 bg-gradient-to-b from-[#222630] to-[#161820] border-b-2 border-gray-700 px-3 py-2 shadow-lg">
-        <div className="mx-auto flex max-w-4xl items-center justify-between gap-2">
+      {/* HEADER SUPERIOR LIMPIO */}
+      <header className="sticky top-0 z-40 bg-[#12151d]/95 backdrop-blur-md border-b border-gray-800 px-3.5 py-2.5 shadow-lg">
+        <div className="mx-auto flex max-w-2xl items-center justify-between gap-2">
+          {/* Logo y estado */}
           <div className="flex items-center gap-2 min-w-0">
-            {onBackToTV && (
-              <button
-                onClick={onBackToTV}
-                className="flex items-center gap-1 rounded bg-[#2b303d] border border-gray-600 px-2.5 py-1 text-xs font-bold text-gray-200 hover:bg-[#383e4f] transition"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Ver TV</span>
-              </button>
-            )}
-
-            <div className="flex items-center gap-1.5 truncate">
-              <span className="text-lg">📻</span>
-              <div>
-                <h1 className="text-xs sm:text-sm font-black tracking-widest uppercase text-cyan-400 font-mono truncate">
-                  ROCKOLAS GARCÍA
-                </h1>
-                <span className="text-[10px] text-gray-400 block -mt-0.5">
-                  Control & Pedidos Móvil
-                </span>
+            <span className="text-xl">📻</span>
+            <div className="min-w-0">
+              <h1 className="text-xs sm:text-sm font-black tracking-wider uppercase text-cyan-400 font-mono truncate">
+                ROCKOLAS GARCÍA
+              </h1>
+              <div className="flex items-center gap-1.5 -mt-0.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-[10px] text-gray-400 font-mono">Control en Vivo</span>
               </div>
             </div>
           </div>
 
-          {/* ACCIONES: ENVIAR A TV & NAVEGAR */}
+          {/* Acciones de TV */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {/* BOTÓN ENVIAR A TV EN CELULAR */}
             {onOpenCast && (
               <button
                 onClick={() => {
                   sounds.playButtonTick();
                   onOpenCast();
                 }}
-                className="flex items-center gap-1 rounded-xl bg-gray-800 hover:bg-gray-700 border border-cyan-500/60 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-cyan-300 shadow active:scale-95 transition"
-                title="Conectar o enviar a la TV"
+                className="flex items-center gap-1 rounded-xl bg-gray-900 border border-cyan-500/40 px-2.5 py-1.5 text-[11px] font-bold text-cyan-300 active:scale-95 transition"
+                title="Transmitir a la TV"
               >
                 <Tv className="h-3.5 w-3.5 text-cyan-400" />
-                <span>Enviar a TV</span>
+                <span className="hidden xs:inline">Conectar TV</span>
               </button>
             )}
 
-            {/* BOTÓN NAVEGAR DESTACADO */}
-            {currentView === 'home' ? (
+            {onBackToTV && (
               <button
                 onClick={() => {
                   sounds.playButtonTick();
-                  setCurrentView('genres');
+                  onBackToTV();
                 }}
-                className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-teal-400 hover:brightness-110 text-black px-3 py-1.5 text-xs font-black shadow-lg transition active:scale-95 animate-pulse"
+                className="flex items-center gap-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black px-2.5 py-1.5 text-[11px] font-black active:scale-95 transition"
+                title="Abrir pantalla de la TV"
               >
-                <Compass className="h-4 w-4 text-black" />
-                <span>NAVEGAR ➔</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => {
-                  sounds.playButtonTick();
-                  setCurrentView('home');
-                }}
-                className="flex items-center gap-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 px-3 py-1.5 text-xs font-black text-black transition active:scale-95"
-              >
-                <ListMusic className="h-4 w-4" />
-                <span>VER COLA ({roomState.queue.length})</span>
+                <span>Ver TV</span>
               </button>
             )}
           </div>
@@ -417,165 +415,179 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
       </header>
 
       {/* ========================================================================= */}
-      {/* VISTA 1: HOME (COLA DE REPRODUCCIÓN + BUSCADOR YOUTUBE DIRECTO)           */}
+      {/* VISTA 1: COLA DE REPRODUCCIÓN & CONTROL EN VIVO                            */}
       {/* ========================================================================= */}
       {currentView === 'home' && (
-        <main className="mx-auto w-full max-w-4xl flex-1 p-3 sm:p-4 space-y-3.5">
-          {/* BANNER AHORA SONANDO EN LA TV */}
+        <main className="mx-auto w-full max-w-2xl flex-1 p-3.5 space-y-4">
+          {/* BANNER AHORA SONANDO EN LA TELE */}
           {roomState.currentSong ? (
-            <div className="rounded-2xl border-2 border-cyan-500/60 bg-gradient-to-r from-[#172533] via-[#0f1720] to-[#0a1017] p-3 shadow-2xl flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="rounded-2xl border-2 border-cyan-500/60 bg-gradient-to-r from-[#142332] via-[#0f1722] to-[#0a1017] p-3.5 shadow-xl">
+              <div className="flex items-center gap-3">
                 <SongThumbnail
                   src={roomState.currentSong.thumbnail}
                   videoId={roomState.currentSong.videoId}
                   alt={roomState.currentSong.title}
-                  className="h-12 w-16 rounded-xl object-cover bg-black shrink-0 border border-cyan-500/50 shadow"
+                  className="h-14 w-20 rounded-xl object-cover bg-black shrink-0 border border-cyan-400/50 shadow"
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5 mb-0.5">
+                  <div className="flex items-center gap-1.5 mb-1">
                     <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
                     <span className="text-[10px] font-mono font-black text-emerald-400 uppercase tracking-widest">
-                      SONANDO EN LA TV
+                      {roomState.isPlaying ? 'SONANDO EN LA TV' : 'PAUSADO EN LA TV'}
                     </span>
                   </div>
-                  <h3 className="text-xs sm:text-sm font-black text-white truncate">
+                  <h3 className="text-sm font-black text-white truncate leading-tight">
                     {roomState.currentSong.title}
                   </h3>
-                  <p className="text-[11px] text-cyan-300 font-semibold truncate">
+                  <p className="text-xs text-cyan-300 font-semibold truncate mt-0.5">
                     {roomState.currentSong.artist}
                   </p>
                 </div>
               </div>
 
-              {/* Controles de reproducción rápida en TV */}
-              <div className="flex items-center gap-1.5 shrink-0">
+              {/* Botones de Control Principal de la TV */}
+              <div className="mt-3 pt-2.5 border-t border-cyan-900/40 flex items-center justify-between gap-2">
                 <button
-                  onClick={() => onPlayPauseToggle(!roomState.isPlaying)}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black shadow active:scale-95 transition"
-                  title={roomState.isPlaying ? 'Pausar' : 'Reproducir'}
+                  onClick={() => {
+                    sounds.playButtonTick();
+                    onPlayPauseToggle(!roomState.isPlaying);
+                  }}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-black text-xs transition active:scale-95 shadow ${
+                    roomState.isPlaying
+                      ? 'bg-amber-400 hover:bg-amber-300 text-black'
+                      : 'bg-emerald-500 hover:bg-emerald-400 text-black'
+                  }`}
                 >
-                  {roomState.isPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="h-4 w-4 fill-current ml-0.5" />}
+                  {roomState.isPlaying ? (
+                    <>
+                      <Pause className="h-4 w-4 fill-current" />
+                      <span>PAUSAR TV</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="h-4 w-4 fill-current" />
+                      <span>REANUDAR TV</span>
+                    </>
+                  )}
                 </button>
+
                 <button
-                  onClick={onNextSong}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 active:scale-95 transition"
-                  title="Siguiente canción"
+                  onClick={() => {
+                    sounds.playButtonTick();
+                    onNextSong();
+                  }}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 text-cyan-300 font-black text-xs transition active:scale-95"
                 >
                   <SkipForward className="h-4 w-4" />
+                  <span>SIGUIENTE</span>
                 </button>
               </div>
             </div>
           ) : (
-            <div className="rounded-2xl border border-gray-700 bg-gray-900/60 p-3.5 text-center">
-              <span className="text-2xl mb-1 inline-block">📻</span>
-              <h3 className="text-xs font-bold text-gray-300">La TV está en espera</h3>
-              <p className="text-[11px] text-gray-500 mt-0.5">
-                Busca una canción abajo o pulsa «Navegar» para explorar discos por género.
+            <div className="rounded-2xl border border-gray-800 bg-[#12141c] p-4 text-center">
+              <span className="text-3xl mb-1 inline-block">📻</span>
+              <h3 className="text-sm font-bold text-gray-200">La TV está esperando música</h3>
+              <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
+                Toca abajo para buscar tu canción favorita y poner a sonar la rockola.
               </p>
+              <button
+                onClick={() => setCurrentView('search')}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black text-xs px-4 py-2 shadow transition active:scale-95"
+              >
+                <Search className="h-3.5 w-3.5" />
+                <span>Buscar canción en YouTube</span>
+              </button>
             </div>
           )}
 
-          {/* BUSCADOR DIRECTO DE YOUTUBE */}
-          <div className="rounded-2xl border-2 border-cyan-500/70 bg-gradient-to-b from-[#1b2029] to-[#12151b] p-3.5 shadow-xl">
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-xs sm:text-sm font-black uppercase text-cyan-300 flex items-center gap-2 font-mono">
-                <Search className="h-4 w-4 text-cyan-400" />
-                Buscador de Cualquier Canción (YouTube)
-              </h2>
-              <span className="text-[10px] text-gray-400 font-sans">
-                Escribe cantante o tema
-              </span>
+          {/* ACCESO RÁPIDO AL BUSCADOR */}
+          <div
+            onClick={() => setCurrentView('search')}
+            className="flex items-center justify-between gap-3 rounded-2xl border border-gray-700 bg-[#141822] px-4 py-3 cursor-pointer hover:border-cyan-400 transition shadow group"
+          >
+            <div className="flex items-center gap-2.5 text-gray-400 group-hover:text-gray-200">
+              <Search className="h-4 w-4 text-cyan-400" />
+              <span className="text-xs font-medium">¿Qué canción quieres escuchar? Buscar...</span>
             </div>
+            <span className="rounded-lg bg-cyan-500/10 border border-cyan-500/30 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
+              Abrir
+            </span>
+          </div>
 
-            {/* Input de Búsqueda */}
-            <div className="relative">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Busca por cantante, tema o pega un link..."
-                className="w-full rounded-xl border border-cyan-500/50 bg-black/90 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-cyan-400 focus:outline-none shadow-inner"
-              />
-              {isSearchingYt && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
-                </div>
+          {/* LISTA DE REPRODUCCIÓN (COLA EN ESPERA) */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-xs sm:text-sm font-black uppercase text-white flex items-center gap-2 font-mono">
+                <ListMusic className="h-4 w-4 text-cyan-400" />
+                <span>Canciones en Fila ({roomState.queue.length})</span>
+              </h2>
+              {roomState.queue.length > 0 && (
+                <span className="text-[11px] font-mono text-cyan-400">
+                  {roomState.queue.length} por sonar
+                </span>
               )}
             </div>
 
-            {/* Resultados de búsqueda instantáneos */}
-            {ytSearchResults.length > 0 && (
-              <div className="mt-2.5 space-y-2 max-h-72 overflow-y-auto pr-1 scrollbar-thin border-t border-gray-800 pt-2">
-                {ytSearchResults.map((video) => (
-                  <div
-                    key={video.videoId}
-                    className="flex items-center justify-between gap-2.5 rounded-xl border border-gray-800 bg-black/75 p-2 hover:border-cyan-500 transition"
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <SongThumbnail
-                        src={video.thumbnail}
-                        videoId={video.videoId}
-                        alt={video.title}
-                        className="h-10 w-14 rounded object-cover bg-black shrink-0 border border-gray-700"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <h4 className="text-xs font-bold text-white truncate">{video.title}</h4>
-                        <p className="text-[11px] text-gray-400 truncate">{video.artist}</p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => handleAddYouTubeResult(video, false)}
-                        className="rounded-lg bg-cyan-500 hover:bg-cyan-400 px-3 py-1.5 text-xs font-black text-black active:scale-95 transition"
-                      >
-                        Poner
-                      </button>
-                      <button
-                        onClick={() => handleAddYouTubeResult(video, true)}
-                        className="rounded-lg bg-amber-400 hover:bg-amber-300 px-3 py-1.5 text-xs font-black text-black active:scale-95 transition"
-                      >
-                        1° Puesto
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* LISTA DE REPRODUCCIÓN (COLA EN ESPERA) - DIRECTAMENTE DEBAJO SIN BLOQUES DUPLICADOS */}
-          <div className="rounded-2xl border-2 border-gray-700 bg-gradient-to-b from-[#181a20] to-[#0f1115] p-3.5 shadow-xl">
-            <div className="flex items-center justify-between border-b border-gray-800 pb-2 mb-3">
-              <h2 className="text-xs sm:text-sm font-black uppercase text-white flex items-center gap-2 font-mono">
-                <ListMusic className="h-4 w-4 text-cyan-400" />
-                Lista de Reproducción en Espera ({roomState.queue.length})
-              </h2>
-              <span className="text-[10px] text-cyan-400/80 font-mono">
-                EN VIVO
-              </span>
-            </div>
-
             {roomState.queue.length === 0 ? (
-              <div className="py-10 px-4 text-center">
+              <div className="rounded-2xl border border-gray-800 bg-[#101218] py-10 px-4 text-center">
                 <span className="text-3xl mb-2 inline-block">🎶</span>
                 <p className="text-sm font-bold text-gray-300">
-                  No hay canciones en la lista
+                  No hay más canciones en la fila
                 </p>
                 <p className="text-xs text-gray-500 mt-1 max-w-xs mx-auto">
-                  ¡Sé el primero en pedir música! Escribe en el buscador de arriba o toca «Navegar» para ver discos.
+                  ¡Sé el primero en pedir! Usa el buscador o explora discos por artista.
                 </p>
+                <div className="mt-4 flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => setCurrentView('search')}
+                    className="flex items-center gap-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 px-3.5 py-2 text-xs font-black text-black active:scale-95 transition"
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                    <span>Buscar YouTube</span>
+                  </button>
+                  <button
+                    onClick={() => setCurrentView('genres')}
+                    className="flex items-center gap-1.5 rounded-xl bg-gray-800 hover:bg-gray-700 px-3.5 py-2 text-xs font-bold text-cyan-300 border border-gray-700 active:scale-95 transition"
+                  >
+                    <Compass className="h-3.5 w-3.5" />
+                    <span>Explorar Discos</span>
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {roomState.queue.map((song, idx) => (
                   <div
                     key={song.id}
-                    className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl border border-gray-800 bg-black/70 p-2.5 hover:border-gray-700 transition"
+                    className={`rounded-2xl border p-3 transition-all shadow-md ${
+                      idx === 0
+                        ? 'border-amber-500/70 bg-gradient-to-br from-[#1c180e] via-[#14120f] to-[#0c0d11] shadow-[0_4px_20px_rgba(245,158,11,0.15)]'
+                        : 'border-gray-800 bg-[#12141a] hover:border-gray-700'
+                    }`}
                   >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      {/* Selector directo de turno o número */}
+                    {/* Fila Superior: Badge de Turno y Selector Directo de Posición */}
+                    <div className="flex items-center justify-between gap-2 pb-2 mb-2 border-b border-gray-800/80">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {idx === 0 ? (
+                          <span className="flex items-center gap-1 rounded-full bg-amber-400 px-2.5 py-0.5 text-[11px] font-black text-black uppercase tracking-wider font-mono shadow">
+                            <Star className="h-3 w-3 fill-current" />
+                            <span>1° EN TURNO (Siguiente)</span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 rounded-full bg-gray-800 border border-gray-700 px-2.5 py-0.5 text-[11px] font-bold text-cyan-300 font-mono">
+                            <span>Turno #{idx + 1}</span>
+                          </span>
+                        )}
+                        {song.isFirstPriority && idx > 0 && (
+                          <span className="rounded bg-amber-500/20 border border-amber-400/40 px-1.5 py-0.5 text-[9px] font-bold text-amber-300">
+                            Prioridad
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Selector directo para mover de turno */}
                       <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] text-gray-400 font-mono">Mover a:</span>
                         <select
                           value={idx + 1}
                           onChange={(e) => {
@@ -585,108 +597,121 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
                               onReorderQueue?.(idx, targetIdx);
                             }
                           }}
-                          className="font-mono text-xs font-black text-cyan-300 bg-gray-900 border border-gray-700 rounded px-1 py-1 cursor-pointer hover:border-cyan-500 focus:outline-none"
-                          title="Cambiar turno en la lista"
+                          className="font-mono text-xs font-black text-cyan-300 bg-gray-900 border border-gray-700 rounded-lg px-2 py-1 cursor-pointer hover:border-cyan-400 focus:outline-none"
+                          title="Cambiar turno de esta canción"
                         >
                           {roomState.queue.map((_, i) => (
                             <option key={i} value={i + 1}>
-                              #{i + 1}
+                              Turno #{i + 1} {i === 0 ? '(1°)' : ''}
                             </option>
                           ))}
                         </select>
                       </div>
+                    </div>
 
+                    {/* Fila Central: Miniatura + Título + Artista */}
+                    <div className="flex items-center gap-3">
                       <SongThumbnail
                         src={song.thumbnail}
                         videoId={song.videoId}
                         alt={song.title}
-                        className="h-10 w-14 rounded object-cover bg-black shrink-0 border border-gray-800"
+                        className="h-12 w-16 sm:h-14 sm:w-20 rounded-xl object-cover bg-black shrink-0 border border-gray-700 shadow"
                       />
                       <div className="min-w-0 flex-1">
-                        <h4 className="text-xs font-bold text-white truncate">{song.title}</h4>
-                        <p className="text-[11px] text-gray-400 truncate">{song.artist}</p>
+                        <h4 className="text-xs sm:text-sm font-bold text-white line-clamp-2 leading-tight">
+                          {song.title}
+                        </h4>
+                        <p className="text-[11px] sm:text-xs text-cyan-400 font-semibold truncate mt-0.5">
+                          {song.artist}
+                        </p>
+                        {song.requestedBy && (
+                          <p className="text-[10px] text-gray-500 truncate mt-0.5">
+                            Pedida por: <span className="text-gray-400">{song.requestedBy}</span>
+                          </p>
+                        )}
                       </div>
                     </div>
 
-                    {/* Botonera de acciones para mover el orden y reproducir */}
-                    <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
-                      {/* Poner de primero */}
-                      {idx > 0 && (
+                    {/* Fila Inferior: Botones de Acción Táctiles y Grandes */}
+                    <div className="mt-2.5 pt-2 border-t border-gray-800/80 flex items-center justify-between gap-1.5">
+                      {/* Izquierda: Tocar Ya y 1° Puesto */}
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        {onPlayNow && (
+                          <button
+                            onClick={() => {
+                              sounds.playNeedleDrop();
+                              onPlayNow(song);
+                            }}
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 px-3 py-2 text-xs font-black text-black active:scale-95 transition shadow"
+                            title="Reproducir ahora mismo en la TV"
+                          >
+                            <Play className="h-3.5 w-3.5 fill-current" />
+                            <span>Tocar ya</span>
+                          </button>
+                        )}
+
+                        {idx > 0 && (
+                          <button
+                            onClick={() => {
+                              sounds.playButtonTick();
+                              onMoveToTop(song.id);
+                            }}
+                            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 px-3 py-2 text-xs font-black text-black active:scale-95 transition shadow"
+                            title="Pasar al primer turno de la fila"
+                          >
+                            <Star className="h-3.5 w-3.5 fill-current" />
+                            <span>1° Puesto</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Derecha: Flechas Subir/Bajar y Borrar */}
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
+                          disabled={idx === 0}
                           onClick={() => {
                             sounds.playButtonTick();
-                            onMoveToTop(song.id);
+                            onMoveUp?.(song.id);
                           }}
-                          className="flex items-center gap-1 rounded-lg bg-amber-400 hover:bg-amber-300 px-2 py-1 text-[10px] font-black text-black active:scale-95 transition"
-                          title="Poner de primero en la fila"
+                          className={`h-9 w-9 flex items-center justify-center rounded-xl border transition active:scale-95 ${
+                            idx === 0
+                              ? 'border-gray-800/60 text-gray-700 cursor-not-allowed'
+                              : 'border-gray-700 bg-gray-900 text-cyan-400 hover:bg-gray-800'
+                          }`}
+                          title="Subir un puesto"
                         >
-                          <Star className="h-3 w-3 fill-current" />
-                          <span>1° Puesto</span>
+                          <ChevronUp className="h-4 w-4" />
                         </button>
-                      )}
 
-                      {/* Subir un turno */}
-                      <button
-                        disabled={idx === 0}
-                        onClick={() => {
-                          sounds.playButtonTick();
-                          onMoveUp?.(song.id);
-                        }}
-                        className={`rounded-lg border p-1 text-xs transition active:scale-95 ${
-                          idx === 0
-                            ? 'border-gray-800 text-gray-600 cursor-not-allowed'
-                            : 'border-gray-700 bg-gray-900 text-cyan-400 hover:bg-gray-800'
-                        }`}
-                        title="Subir un turno arriba"
-                      >
-                        <ChevronUp className="h-3.5 w-3.5" />
-                      </button>
-
-                      {/* Bajar un turno */}
-                      <button
-                        disabled={idx === roomState.queue.length - 1}
-                        onClick={() => {
-                          sounds.playButtonTick();
-                          onMoveDown?.(song.id);
-                        }}
-                        className={`rounded-lg border p-1 text-xs transition active:scale-95 ${
-                          idx === roomState.queue.length - 1
-                            ? 'border-gray-800 text-gray-600 cursor-not-allowed'
-                            : 'border-gray-700 bg-gray-900 text-cyan-400 hover:bg-gray-800'
-                        }`}
-                        title="Bajar un turno abajo"
-                      >
-                        <ChevronDown className="h-3.5 w-3.5" />
-                      </button>
-
-                      {/* Tocar ahora mismo */}
-                      {onPlayNow && (
                         <button
-                          onClick={() => {
-                            sounds.playNeedleDrop();
-                            onPlayNow(song);
-                          }}
-                          className="flex items-center gap-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 px-2 py-1 text-[10px] font-black text-white active:scale-95 transition"
-                          title="Reproducir ahora mismo"
-                        >
-                          <Play className="h-3 w-3 fill-current" />
-                          <span>Tocar ya</span>
-                        </button>
-                      )}
-
-                      {/* Quitar de la lista */}
-                      {onRemoveSong && (
-                        <button
+                          disabled={idx === roomState.queue.length - 1}
                           onClick={() => {
                             sounds.playButtonTick();
-                            onRemoveSong(song.id);
+                            onMoveDown?.(song.id);
                           }}
-                          className="rounded-lg border border-red-900/50 bg-red-950/30 p-1 text-red-400 hover:bg-red-900/50 transition active:scale-95"
-                          title="Quitar de la lista"
+                          className={`h-9 w-9 flex items-center justify-center rounded-xl border transition active:scale-95 ${
+                            idx === roomState.queue.length - 1
+                              ? 'border-gray-800/60 text-gray-700 cursor-not-allowed'
+                              : 'border-gray-700 bg-gray-900 text-cyan-400 hover:bg-gray-800'
+                          }`}
+                          title="Bajar un puesto"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <ChevronDown className="h-4 w-4" />
                         </button>
-                      )}
+
+                        {onRemoveSong && (
+                          <button
+                            onClick={() => {
+                              sounds.playButtonTick();
+                              onRemoveSong(song.id);
+                            }}
+                            className="h-9 w-9 flex items-center justify-center rounded-xl border border-red-900/50 bg-red-950/40 text-red-400 hover:bg-red-900/60 transition active:scale-95"
+                            title="Quitar de la fila"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -697,20 +722,172 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA 2: NAVEGAR CUADROS GRANDES CON GÉNEROS (INCLUYE OLDIES, TRISTES...) */}
+      {/* VISTA 2: BUSCADOR COMPLETO DE YOUTUBE                                      */}
       {/* ========================================================================= */}
-      {currentView === 'genres' && (
-        <main className="mx-auto w-full max-w-4xl flex-1 p-3 sm:p-4 space-y-3.5">
-          <div className="flex items-center justify-between gap-2 border-b border-gray-800 pb-2">
+      {currentView === 'search' && (
+        <main className="mx-auto w-full max-w-2xl flex-1 p-3.5 space-y-4">
+          <div className="flex items-center justify-between border-b border-gray-800 pb-2">
             <button
               onClick={() => {
                 sounds.playButtonTick();
                 setCurrentView('home');
               }}
-              className="flex items-center gap-1.5 rounded-xl border border-gray-600 bg-gray-800 px-3.5 py-1.5 text-xs font-black text-cyan-300 hover:bg-gray-700 transition"
+              className="flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-bold text-cyan-300 hover:bg-gray-700 transition"
             >
               <ArrowLeft className="h-4 w-4" />
-              <span>VOLVER A LA LISTA</span>
+              <span>Volver a la Cola</span>
+            </button>
+
+            <span className="font-mono text-xs font-bold text-gray-400">
+              BUSCADOR YOUTUBE
+            </span>
+          </div>
+
+          {/* Input de Búsqueda con Botón Limpiar */}
+          <div className="relative">
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Escribe canción o cantante..."
+              className="w-full rounded-2xl border-2 border-cyan-500/70 bg-[#12151d] pl-10 pr-10 py-3 text-sm text-white placeholder-gray-500 focus:border-cyan-400 focus:outline-none shadow-inner"
+            />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-cyan-400" />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 h-5 w-5 rounded-full bg-gray-700 text-gray-300 flex items-center justify-center hover:bg-gray-600 transition"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {isSearchingYt && (
+              <div className="absolute right-10 top-1/2 -translate-y-1/2">
+                <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+              </div>
+            )}
+          </div>
+
+          {/* Pastillas de Búsqueda Rápida (Inspiración en 1 toque) */}
+          <div className="space-y-1.5">
+            <span className="text-[11px] font-mono text-gray-400 uppercase tracking-wider block">
+              Búsquedas populares para la fiesta:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {QUICK_SEARCH_PILLS.map((pill) => (
+                <button
+                  key={pill.label}
+                  onClick={() => {
+                    sounds.playButtonTick();
+                    setSearchQuery(pill.query);
+                    performSearch(pill.query);
+                  }}
+                  className="rounded-xl border border-gray-700 bg-gray-900/80 px-2.5 py-1 text-xs font-semibold text-gray-300 hover:border-cyan-400 hover:text-cyan-300 active:scale-95 transition"
+                >
+                  {pill.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Resultados de Búsqueda */}
+          {ytSearchResults.length > 0 ? (
+            <div className="space-y-2.5">
+              <span className="text-xs font-mono text-cyan-400 block font-bold">
+                {ytSearchResults.length} resultados encontrados:
+              </span>
+              {ytSearchResults.map((video) => (
+                <div
+                  key={video.videoId}
+                  className="rounded-2xl border border-gray-800 bg-[#12151d] p-3 hover:border-cyan-500/60 transition shadow"
+                >
+                  <div className="flex items-center gap-3">
+                    <SongThumbnail
+                      src={video.thumbnail}
+                      videoId={video.videoId}
+                      alt={video.title}
+                      className="h-14 w-20 rounded-xl object-cover bg-black shrink-0 border border-gray-700"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-xs sm:text-sm font-bold text-white line-clamp-2 leading-tight">
+                        {video.title}
+                      </h4>
+                      <p className="text-xs text-cyan-400 font-semibold truncate mt-0.5">
+                        {video.artist}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Botones de acción directos */}
+                  <div className="mt-2.5 pt-2 border-t border-gray-800/80 grid grid-cols-3 gap-1.5">
+                    <button
+                      onClick={() => handleAddYouTubeResult(video, false)}
+                      className="flex items-center justify-center gap-1 rounded-xl bg-gray-800 hover:bg-gray-700 border border-gray-700 py-2 text-[11px] font-bold text-cyan-300 active:scale-95 transition"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>A la Fila</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleAddYouTubeResult(video, true)}
+                      className="flex items-center justify-center gap-1 rounded-xl bg-amber-400 hover:bg-amber-300 py-2 text-[11px] font-black text-black active:scale-95 transition shadow"
+                    >
+                      <Star className="h-3 w-3 fill-current" />
+                      <span>1° Puesto</span>
+                    </button>
+
+                    {onPlayNow && (
+                      <button
+                        onClick={() => {
+                          sounds.playNeedleDrop();
+                          onPlayNow({
+                            id: `yt_${video.videoId}_${Date.now()}`,
+                            videoId: video.videoId,
+                            title: video.title,
+                            artist: video.artist,
+                            thumbnail: video.thumbnail,
+                            votes: 1,
+                            voters: [],
+                            addedAt: Date.now(),
+                          });
+                          setNotification(`▶️ Reproduciendo "${video.title}" en la TV`);
+                          setTimeout(() => setNotification(null), 3000);
+                        }}
+                        className="flex items-center justify-center gap-1 rounded-xl bg-cyan-500 hover:bg-cyan-400 py-2 text-[11px] font-black text-black active:scale-95 transition shadow"
+                      >
+                        <Play className="h-3 w-3 fill-current" />
+                        <span>Tocar Ya</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : searchQuery.trim().length >= 2 && !isSearchingYt ? (
+            <div className="py-12 text-center text-gray-500">
+              <p className="text-sm font-semibold">No encontramos videos para esa búsqueda</p>
+              <p className="text-xs mt-1">Prueba con el nombre del artista o cantante</p>
+            </div>
+          ) : null}
+        </main>
+      )}
+
+      {/* ========================================================================= */}
+      {/* VISTA 3: EXPLORAR GÉNEROS MUSICALES                                        */}
+      {/* ========================================================================= */}
+      {currentView === 'genres' && (
+        <main className="mx-auto w-full max-w-2xl flex-1 p-3.5 space-y-3.5">
+          <div className="flex items-center justify-between border-b border-gray-800 pb-2">
+            <button
+              onClick={() => {
+                sounds.playButtonTick();
+                setCurrentView('home');
+              }}
+              className="flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-bold text-cyan-300 hover:bg-gray-700 transition"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Volver a la Cola</span>
             </button>
 
             <span className="font-mono text-xs font-bold text-gray-400">
@@ -719,16 +896,16 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
           </div>
 
           <div className="text-center py-1">
-            <h2 className="text-base sm:text-lg font-black text-white uppercase tracking-wider">
-              Selecciona un Género de Rockola
+            <h2 className="text-base font-black text-white uppercase tracking-wider">
+              Selecciona un Género
             </h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              Toca un recuadro para abrir los discos y las canciones de ese estilo.
+              Toca un recuadro para abrir los discos y temas de ese estilo.
             </p>
           </div>
 
-          {/* CUADRÍCULA DE CUADROS GRANDES DE GÉNEROS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* Cuadrícula de Géneros */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {GENRE_CATEGORIES.map((genre) => (
               <button
                 key={genre.id}
@@ -737,21 +914,19 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
                   setActiveGenre(genre);
                   setCurrentView('disco_wall');
                 }}
-                className={`relative overflow-hidden rounded-2xl border-2 p-4 text-left transition-all duration-200 shadow-xl hover:scale-[1.02] active:scale-95 bg-gradient-to-br ${genre.gradient} border-gray-700 hover:border-cyan-400 group`}
+                className={`relative overflow-hidden rounded-2xl border-2 p-3.5 text-left transition-all duration-200 shadow-lg hover:scale-[1.01] active:scale-95 bg-gradient-to-br ${genre.gradient} border-gray-700 hover:border-cyan-400`}
               >
-                <div className="flex items-start justify-between gap-3 mb-1.5">
-                  <span className="text-3xl sm:text-4xl group-hover:scale-110 transition duration-300">
-                    {genre.icon}
-                  </span>
-                  <span className="text-[11px] font-black uppercase text-cyan-300 border border-cyan-500/40 bg-black/60 px-2 py-0.5 rounded">
-                    ABRIR DISCOS ➔
+                <div className="flex items-start justify-between gap-2 mb-1.5">
+                  <span className="text-3xl">{genre.icon}</span>
+                  <span className="text-[10px] font-black uppercase text-cyan-300 border border-cyan-500/40 bg-black/60 px-2 py-0.5 rounded">
+                    Abrir ➔
                   </span>
                 </div>
 
-                <h3 className="text-sm sm:text-base font-black text-white uppercase tracking-wide group-hover:text-cyan-300 transition">
+                <h3 className="text-sm font-black text-white uppercase tracking-wide">
                   {genre.name}
                 </h3>
-                <p className="text-xs text-gray-300 mt-0.5 line-clamp-2">
+                <p className="text-[11px] text-gray-300 mt-0.5 line-clamp-1">
                   {genre.subtitle}
                 </p>
               </button>
@@ -761,27 +936,26 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* VISTA 3: DISCOS DEL GÉNERO SELECCIONADO (VIRTUAL MUSIC JUKEBOX 2X2)       */}
+      {/* VISTA 4: DISCOS DEL GÉNERO SELECCIONADO (GABINETE VIRTUAL)                 */}
       {/* ========================================================================= */}
       {currentView === 'disco_wall' && (
-        <main className="mx-auto w-full max-w-5xl flex-1 p-2 sm:p-4 space-y-3">
-          {/* Barra de control para regresar a géneros o a lista */}
-          <div className="flex items-center justify-between gap-2 border-b border-gray-800 pb-2">
+        <main className="mx-auto w-full max-w-2xl flex-1 p-3.5 space-y-3">
+          <div className="flex items-center justify-between border-b border-gray-800 pb-2">
             <button
               onClick={() => {
                 sounds.playButtonTick();
                 setCurrentView('genres');
               }}
-              className="flex items-center gap-1.5 rounded-xl border border-gray-600 bg-gray-800 px-3 py-1.5 text-xs font-black text-cyan-300 hover:bg-gray-700 transition"
+              className="flex items-center gap-1.5 rounded-xl border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-bold text-cyan-300 hover:bg-gray-700 transition"
             >
               <ArrowLeft className="h-4 w-4" />
-              <span>GÉNEROS</span>
+              <span>Géneros</span>
             </button>
 
-            <div className="flex items-center gap-2">
-              <span className="text-xl">{activeGenre.icon}</span>
+            <div className="flex items-center gap-1.5 truncate">
+              <span className="text-lg">{activeGenre.icon}</span>
               <span className="font-mono text-xs font-black uppercase text-white truncate">
-                {activeGenre.name} ({filteredArtists.length} Discos)
+                {activeGenre.name} ({filteredArtists.length})
               </span>
             </div>
 
@@ -790,9 +964,9 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
                 sounds.playButtonTick();
                 setCurrentView('home');
               }}
-              className="rounded-xl border border-cyan-500/50 bg-cyan-950 px-3 py-1.5 text-xs font-black text-cyan-300 hover:text-white transition"
+              className="rounded-xl border border-cyan-500/50 bg-cyan-950 px-2.5 py-1.5 text-xs font-black text-cyan-300 hover:text-white transition"
             >
-              VER COLA ({roomState.queue.length})
+              Cola ({roomState.queue.length})
             </button>
           </div>
 
@@ -811,95 +985,213 @@ export const GuestRequestView: React.FC<GuestRequestViewProps> = ({
             <button
               type="submit"
               disabled={isAddingCustomArtist || !customArtistInput.trim()}
-              className="flex items-center gap-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-black px-3 py-1.5 text-xs font-black shadow transition shrink-0"
+              className="flex items-center gap-1 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-black px-3 py-1.5 text-xs font-black shadow transition shrink-0"
             >
               {isAddingCustomArtist ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
                 <Plus className="h-3.5 w-3.5" />
               )}
-              <span>Crear Disco</span>
+              <span>Crear</span>
             </button>
           </form>
 
-          {/* EL GABINETE METÁLICO CROMADO CON LOS DISCOS DEL GÉNERO */}
-          <div className="relative rounded-2xl border-4 sm:border-8 border-[#9ca3af] p-2 sm:p-4 shadow-2xl bg-gradient-to-b from-[#6b7280] via-[#374151] to-[#1f2937]">
-            {/* Tornillos en las 4 esquinas */}
-            <div className="absolute top-2 left-2 h-3.5 w-3.5 rounded-full bg-gradient-to-br from-gray-200 to-gray-600 border border-gray-400 flex items-center justify-center text-[8px] font-mono text-gray-700 shadow font-bold">
-              +
-            </div>
-            <div className="absolute top-2 right-2 h-3.5 w-3.5 rounded-full bg-gradient-to-br from-gray-200 to-gray-600 border border-gray-400 flex items-center justify-center text-[8px] font-mono text-gray-700 shadow font-bold">
-              +
-            </div>
-            <div className="absolute bottom-2 left-2 h-3.5 w-3.5 rounded-full bg-gradient-to-br from-gray-200 to-gray-600 border border-gray-400 flex items-center justify-center text-[8px] font-mono text-gray-700 shadow font-bold">
-              +
-            </div>
-            <div className="absolute bottom-2 right-2 h-3.5 w-3.5 rounded-full bg-gradient-to-br from-gray-200 to-gray-600 border border-gray-400 flex items-center justify-center text-[8px] font-mono text-gray-700 shadow font-bold">
-              +
-            </div>
+          {/* Discos del Género */}
+          <div className="space-y-3">
+            {filteredArtists.map((artist) => (
+              <div
+                key={artist.id}
+                className="flex border-2 border-[#374151] bg-black rounded-2xl overflow-hidden shadow-lg hover:border-cyan-500/70 transition-all"
+              >
+                {/* Foto del Artista */}
+                <div className="w-[36%] shrink-0 relative bg-[#0a0a0a] flex items-center justify-center border-r-2 border-[#374151] overflow-hidden">
+                  <img
+                    src={artist.image}
+                    alt={artist.name}
+                    referrerPolicy="no-referrer"
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                </div>
 
-            {/* Marco Interior de Monitor CRT */}
-            <div className="rounded-xl bg-black p-2 sm:p-3 border-2 border-gray-800 shadow-[inset_0_0_20px_rgba(0,0,0,0.8)]">
-              {/* CUADRÍCULA DE DISCOS Y CANCIONES */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 sm:gap-3.5">
-                {filteredArtists.map((artist) => (
-                  <div
-                    key={artist.id}
-                    className="flex border-2 border-[#374151] bg-black rounded overflow-hidden shadow-lg hover:border-cyan-500/70 transition-all duration-200"
-                  >
-                    {/* FOTO DEL ARTISTA / CARÁTULA A LA IZQUIERDA */}
-                    <div className="w-[38%] sm:w-[35%] shrink-0 relative bg-[#0a0a0a] flex items-center justify-center border-r-2 border-[#374151] overflow-hidden">
-                      <img
-                        src={artist.image}
-                        alt={artist.name}
-                        referrerPolicy="no-referrer"
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent pointer-events-none" />
-                    </div>
-
-                    {/* COLUMNA DERECHA: BANNER BLANCO CON NOMBRE + LISTA DE CANCIONES */}
-                    <div className="w-[62%] sm:w-[65%] flex flex-col bg-black">
-                      {/* Banner Blanco con Nombre del Artista */}
-                      <div className="bg-white text-black px-2 py-1 text-center font-black tracking-wider text-xs sm:text-sm font-sans uppercase border-b-2 border-black truncate">
-                        {artist.name}
-                      </div>
-
-                      {/* Lista de Canciones con Códigos 001, 002... */}
-                      <div className="flex-1 p-1 sm:p-1.5 flex flex-col justify-between text-[11px] sm:text-xs">
-                        {artist.songs.map((song) => (
-                          <button
-                            key={song.code + song.title}
-                            onClick={() => handleSelectTrack(song)}
-                            className="flex items-center gap-2 px-1.5 py-0.5 sm:py-1 rounded text-left hover:bg-cyan-950/80 active:bg-cyan-800 transition group border border-transparent hover:border-cyan-500/50"
-                          >
-                            <span className="font-mono font-bold text-cyan-400 group-hover:text-cyan-200 shrink-0">
-                              {song.code}
-                            </span>
-                            <span className="font-bold text-gray-100 group-hover:text-white truncate">
-                              {song.title}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                {/* Columna Derecha con Nombre y Lista de Canciones */}
+                <div className="w-[64%] flex flex-col bg-black">
+                  <div className="bg-white text-black px-2 py-1 text-center font-black tracking-wider text-xs font-sans uppercase border-b-2 border-black truncate">
+                    {artist.name}
                   </div>
-                ))}
-              </div>
 
-              {/* TEXTO INFERIOR EMBOSSED VIRTUAL MUSIC JUKEBOX */}
-              <div className="mt-3 text-center">
-                <span className="font-mono text-xs sm:text-sm font-black tracking-[0.3em] uppercase text-cyan-500/70 drop-shadow-[0_0_8px_rgba(6,182,212,0.5)]">
-                  VIRTUAL MUSIC JUKEBOX
-                </span>
+                  <div className="flex-1 p-1.5 flex flex-col justify-between text-xs">
+                    {artist.songs.map((song) => (
+                      <button
+                        key={song.code + song.title}
+                        onClick={() => handleSelectTrack(song)}
+                        className="flex items-center gap-2 px-2 py-1 rounded-lg text-left hover:bg-cyan-950/80 active:bg-cyan-800 transition group border border-transparent hover:border-cyan-500/40"
+                      >
+                        <span className="font-mono font-bold text-cyan-400 group-hover:text-cyan-200 shrink-0">
+                          {song.code}
+                        </span>
+                        <span className="font-bold text-gray-100 group-hover:text-white truncate">
+                          {song.title}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
-            </div>
+            ))}
           </div>
         </main>
       )}
 
-      {/* MODAL DIÁLOGO DE ACCIÓN AL TOCAR CUALQUIER CANCIÓN */}
+      {/* ========================================================================= */}
+      {/* MINI-REPRODUCTOR FLOTANTE INFERIOR (SIEMPRE AL ALCANCE DEL PULGAR)        */}
+      {/* ========================================================================= */}
+      {roomState.currentSong && (
+        <div className="fixed bottom-16 inset-x-2 max-w-2xl mx-auto z-40">
+          <div className="flex items-center justify-between gap-3 rounded-2xl border-2 border-cyan-500/70 bg-[#121620]/95 backdrop-blur-xl p-2.5 shadow-[0_10px_35px_rgba(0,0,0,0.85)]">
+            {/* Información clickeable para volver a la cola */}
+            <button
+              onClick={() => {
+                sounds.playButtonTick();
+                setCurrentView('home');
+              }}
+              className="flex items-center gap-2.5 min-w-0 flex-1 text-left group"
+            >
+              <div className="relative shrink-0">
+                <SongThumbnail
+                  src={roomState.currentSong.thumbnail}
+                  videoId={roomState.currentSong.videoId}
+                  alt={roomState.currentSong.title}
+                  className="h-11 w-11 rounded-xl object-cover bg-black border border-cyan-500/40 shadow"
+                />
+                {roomState.isPlaying && (
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+                  </span>
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-[9px] font-mono font-black uppercase text-emerald-400 tracking-wider block">
+                  {roomState.isPlaying ? 'SONANDO EN LA TV' : 'EN PAUSA EN LA TV'}
+                </span>
+                <p className="text-xs font-bold text-white truncate group-hover:text-cyan-300 transition">
+                  {roomState.currentSong.title}
+                </p>
+                <p className="text-[11px] text-gray-400 truncate">
+                  {roomState.currentSong.artist}
+                </p>
+              </div>
+            </button>
+
+            {/* Controles rápidos de reproducción */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={() => {
+                  sounds.playButtonTick();
+                  onPlayPauseToggle(!roomState.isPlaying);
+                }}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black shadow active:scale-95 transition"
+                title={roomState.isPlaying ? 'Pausar TV' : 'Reproducir TV'}
+              >
+                {roomState.isPlaying ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current ml-0.5" />}
+              </button>
+
+              <button
+                onClick={() => {
+                  sounds.playButtonTick();
+                  onNextSong();
+                }}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 active:scale-95 transition"
+                title="Siguiente canción"
+              >
+                <SkipForward className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* BARRA DE NAVEGACIÓN INFERIOR FIJA (THUMB-FRIENDLY & ERGONÓMICA)           */}
+      {/* ========================================================================= */}
+      <nav className="fixed bottom-0 inset-x-0 z-50 bg-[#0e1117]/95 backdrop-blur-xl border-t border-gray-800 px-3 py-1.5 shadow-[0_-5px_25px_rgba(0,0,0,0.6)]">
+        <div className="mx-auto flex max-w-md items-center justify-around gap-1">
+          {/* Tab 1: Cola */}
+          <button
+            onClick={() => {
+              sounds.playButtonTick();
+              setCurrentView('home');
+            }}
+            className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition ${
+              currentView === 'home'
+                ? 'text-cyan-400 font-bold scale-105'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <div className="relative">
+              <ListMusic className="h-5 w-5" />
+              {roomState.queue.length > 0 && (
+                <span className="absolute -top-1.5 -right-2.5 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-cyan-500 text-[10px] font-black text-black font-mono">
+                  {roomState.queue.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] mt-0.5 font-sans">Cola</span>
+          </button>
+
+          {/* Tab 2: Buscar */}
+          <button
+            onClick={() => {
+              sounds.playButtonTick();
+              setCurrentView('search');
+            }}
+            className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition ${
+              currentView === 'search'
+                ? 'text-cyan-400 font-bold scale-105'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Search className="h-5 w-5" />
+            <span className="text-[10px] mt-0.5 font-sans">Buscar</span>
+          </button>
+
+          {/* Tab 3: Discos & Géneros */}
+          <button
+            onClick={() => {
+              sounds.playButtonTick();
+              setCurrentView('genres');
+            }}
+            className={`flex flex-col items-center justify-center py-1.5 px-3 rounded-xl transition ${
+              currentView === 'genres' || currentView === 'disco_wall'
+                ? 'text-cyan-400 font-bold scale-105'
+                : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            <Compass className="h-5 w-5" />
+            <span className="text-[10px] mt-0.5 font-sans">Discos</span>
+          </button>
+
+          {/* Tab 4: Ver Pantalla TV */}
+          {onBackToTV && (
+            <button
+              onClick={() => {
+                sounds.playButtonTick();
+                onBackToTV();
+              }}
+              className="flex flex-col items-center justify-center py-1.5 px-3 rounded-xl text-gray-400 hover:text-cyan-300 transition"
+            >
+              <Tv className="h-5 w-5" />
+              <span className="text-[10px] mt-0.5 font-sans">Ver TV</span>
+            </button>
+          )}
+        </div>
+      </nav>
+
+      {/* ========================================================================= */}
+      {/* MODAL DIÁLOGO DE ACCIÓN AL TOCAR CUALQUIER CANCIÓN                        */}
+      {/* ========================================================================= */}
       {activeSongPrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm animate-in fade-in duration-150">
           <div className="w-full max-w-sm rounded-2xl border-2 border-cyan-400 bg-gradient-to-b from-[#1e232d] to-[#111317] p-5 shadow-2xl text-center">
